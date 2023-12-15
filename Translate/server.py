@@ -5,6 +5,7 @@ import secrets
 import os
 import signal
 import threading
+import secrets
 
 import logging as log
 
@@ -82,19 +83,20 @@ class Channel:
     def __init__(self, server):
         self.server = server
         self.async_server = BaseChannel()
-        self.messages = []
-        self.async_server.messages = self.messages
+        self._messages = []
+        self.async_server.messages = self._messages
         self.connection = False
-
+        self.id = secrets.token_hex()
 
         
     def pump(self):
         num = 0  # There's a small chance we will receive a new message during the pump
-        while len(self.messages):
-            message = self.messages.pop(0)
+        while len(self._messages):
+            message = self._messages.pop(0)
             num += 1
             if hasattr(self, 'Network_' + message['action']):
                 getattr(self, 'Network_' + message['action'])(message)  # Calls the `Network_<action>` function to handle an action. `message` will hold the data.
+                log.debug('Calling Network_' + message['action'])
             else:
                 log.warning('No Network_' + message['action'] + ' found.')
         if num > 0:
@@ -106,8 +108,10 @@ class Channel:
     def send(self, data):
         if self.connection:
             self.async_server.to_send.append(data)
-        else:
-            log.error('Not yet connected, failed to send', data['action'])
+        #else:
+            #log.error('Not yet connected, failed to send', data['action'])
+
+    Send = send  # Compatibility with PodSixNet
 
     def Network_error(self, data):
         log.error('Error:', data['message'])
@@ -124,6 +128,9 @@ class Channel:
         self.connection = False
         self.server.players.remove(self)
         self.server.disconnection(self)
+
+    def __hash__(self):
+        return hash(self.id)
 
 class BaseServer:
     def __init__(self, server, host=None, port=None):
@@ -173,8 +180,11 @@ class Server():
         self.players = self.async_server.channels
 
     def pump(self):
+        
         for player in self.players:
             player.pump()
+            
+    Pump = pump  # Compatibility with PodSixNet
 
     def connection(self, channel):
         log.info('Channel connected!')

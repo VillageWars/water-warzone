@@ -37,7 +37,7 @@ class BaseClient:
         self.to_send = []
         await self.send(compilation)
         if len(compilation['messages']) > 0:
-            #print('Sent %s messages' % len(compilation))
+            log.debug('Sent %s messages' % len(compilation))
             return
         
 
@@ -49,12 +49,12 @@ class BaseClient:
         await self.websocket.send(json.dumps(data))
 
 
-
     async def main(self):
         if 'localhost' in self.host:
             URI = 'ws://' + self.host + ':' + str(self.port)
         else:
             URI = 'wss://' + self.host
+        log.info(URI)
         log.info('Connecting...')
         async with websockets.connect(URI) as websocket:
             self.websocket = websocket
@@ -113,18 +113,22 @@ class Client:
             num += 1
             if hasattr(self, 'Network_' + message['action']):
                 getattr(self, 'Network_' + message['action'])(message)  # Calls the Network function to handle an action. `message` will hold the data.
+                log.debug('Calling Network_' + message['action'])
             else:
                 log.warning('No Network_' + message['action'] + ' found.')
         if num > 0:
-            #print('Pumped %s messages successfully' % num)
+            log.debug('Pumped %s messages successfully' % num)
             return
-            
+    Pump = pump  # Compatibility with PodSixNet
+    
     def error(self, message):
         self.async_client.error(message)
         
     def send(self, data):
         if self.connected:
             self.async_client.to_send.append(data)
+            
+    Send = send  # Compatible with PodSixNet
         
 
     def Network_error(self, data):

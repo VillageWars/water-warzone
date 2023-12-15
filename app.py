@@ -45,12 +45,12 @@ class Server(ParentServer):
 
     
 
-if __name__ == "__main__":
-    name = 'Water Warzone'
-    host = 'water-warzone-0fc31e47a670.herokuapp.com'
-    GAMEMODE = 'Classic'
-    res = requests.get('https://villagewars.pythonanywhere.com/setserver/' + name + '/' + host + '/' + GAMEMODE)
-    res.raise_for_status()
-    server = Server()
-    while True:
-        server.update()
+
+name = 'Water Warzone'
+host = 'water-warzone-0fc31e47a670.herokuapp.com'
+GAMEMODE = 'Classic'
+#res = requests.get('https://villagewars.pythonanywhere.com/setserver/' + name + '/' + host + '/' + GAMEMODE)
+#res.raise_for_status()
+server = Server()
+while True:
+    server.update()
