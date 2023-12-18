@@ -12,14 +12,12 @@ log.basicConfig(level=log.INFO, format='%(message)s')
 
 # To test, run python -m websockets wss://websockets-test-001-91c83418594c.herokuapp.com/
 
-#host = 'water-warzone-0fc31e47a670.herokuapp.com/'
-host = 'localhost'
+host = 'water-warzone-0fc31e47a670.herokuapp.com/'
+#host = 'localhost'
 port = 8001
 
-username = input('Entor your username: ')
+username = input('Enter your username: ')
 
-ACTIONS = ['bruh', 'bill', 'duck', 'kitten', 'caden']
-DATA = {"coords":(234, 3238)}
 
 class Client(ParentClient):
     def __init__(self, host, port, username=None):

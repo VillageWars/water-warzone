@@ -105,11 +105,11 @@ class Channel:
     def error(self, message):
         self.async_server.error(message)
 
-    def send(self, data):
-        if self.connection:
+    def send(self, data, force=False):
+        if self.connection or force:
             self.async_server.to_send.append(data)
-        #else:
-            #log.error('Not yet connected, failed to send', data['action'])
+        else:
+            log.error('Not yet connected, failed to send', data['action'])
 
     Send = send  # Compatibility with PodSixNet
 

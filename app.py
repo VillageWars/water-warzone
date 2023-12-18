@@ -12,7 +12,7 @@ import websockets
 
 import logging as log
 
-log.basicConfig(level=log.INFO, format='%(asctime)s - %(message)s')
+log.basicConfig(level=log.DEBUG, format='%(asctime)s - %(message)s')
 
 class Channel(ParentChannel):
     def __init__(self, *args, **kwargs):
@@ -28,6 +28,10 @@ class Channel(ParentChannel):
     def Network_init(self, data):
         self.username = data.get('username', 'Anonymous')
         log.info('Username set to ' + self.username)
+
+    def Network_debug_text(self, data):
+        print(data['text'])
+        self.Send({'action':'confirm', 'message':'Debug confirm. Text received.'}, force=True)
     
 class Server(ParentServer):
     def __init__(self):
