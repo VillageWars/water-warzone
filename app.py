@@ -37,7 +37,6 @@ import requests
 
 BUILDINGS = CentralBuilding, PortableCentralBuilding, MinersGuild, FarmersGuild, Balloonist, Inn, FitnessCenter, Gym, RunningTrack, HealthCenter, ConstructionSite, RobotFactory, ArcheryTower, BarrelMaker, BotanistsLab, RepairCenter, Ranch, AlchemistsLab, Market, TownHall, AdvancedBalloonistBuilding, Builders, RetiredBarbarianOutpost, AdventuringCenter
 
-sys.path.append(os.path.abspath('../../../'))
 
 from net2web import Channel as ParentChannel, Server as ParentServer, getmyip
 

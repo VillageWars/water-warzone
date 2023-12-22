@@ -26,7 +26,7 @@ class Building(pygame.sprite.Sprite):
         self.state = 'alive'
         self.dimensions = type(self).dimensions
 
-        self.p = pygame.image.load('../assets/buildings/house.png')
+        self.p = pygame.Surface((200,200))
         self.innerrect = self.p.get_rect(center=(x,y))
         self.rect = pygame.Surface((50, 50)).get_rect(midtop=(self.innerrect.midbottom[0], self.innerrect.midbottom[1] + 110))
 
@@ -1180,7 +1180,7 @@ def builder(b, p, has_builder):
         if has_builder:
             dimensions = (b.dimensions[0]*0.8, b.dimensions[1]*0.8)
         x, y = p.x, p.y - 140
-        image = pygame.image.load('../assets/buildings/house.png')
+        image = pygame.Surface((200,200))
         width, height = dimensions
         rect = pygame.Rect(0, 0, width, height)
         rect.midtop = (x, y-round(image.get_height()/2))
