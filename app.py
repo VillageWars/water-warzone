@@ -886,16 +886,18 @@ def check_internet(timeout=2):
 log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log.info('Getting ready...')
 
-
-if check_internet(5):
-    INTERNET = True
-    ip = getmyip()
+if "DYNO" in os.environ:
+    ip = "water-warzone-0fc31e47a670.herokuapp.com"
 else:
-    INTERNET = False
-    try:
+    if check_internet(5):
+        INTERNET = True
         ip = getmyip()
-    except:
-        ip = '127.0.0.1'
+    else:
+        INTERNET = False
+        try:
+            ip = getmyip()
+        except:
+            ip = '127.0.0.1'
     
 port = 5555
 
@@ -925,7 +927,7 @@ def eval_gamemode():
 eval_gamemode()
 name = 'WaterWarzone'
 
-server = MyGameServer(version, host=ip)#"water-warzone-0fc31e47a670.herokuapp.com")
+server = MyGameServer(version, host=ip)
 flask_application = 'http://villagewars.pythonanywhere.com/'
 
 
