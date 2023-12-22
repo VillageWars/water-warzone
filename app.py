@@ -885,12 +885,12 @@ def check_internet(timeout=2):
 
 log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log.info('Getting ready...')
+INTERNET = True
 
 if "DYNO" in os.environ:
     ip = "water-warzone-0fc31e47a670.herokuapp.com"
 else:
-    if check_internet(5):
-        INTERNET = True
+    if INTERNET:
         ip = getmyip()
     else:
         INTERNET = False
