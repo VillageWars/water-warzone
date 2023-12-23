@@ -7,8 +7,11 @@ import signal
 import threading
 import sys
 import socket
-
+import time
 import logging as log
+
+from .toolbox import Clock
+
 
 
 class BaseClient:
@@ -20,26 +23,36 @@ class BaseClient:
         if port:
             self.port = port
         else:
-            self.port = 8001
+            self.port = 5555
         self.websocket = None
         self.messages = []
         self.to_send = []
+        self.clock = Clock(30)
 
         
     def start(self):
         asyncio.run(self.main())
 
     async def send_messages(self):
-        messages_to_send = self.to_send[:]
-        self.to_send = []
-        compilation = {'messages':[]}
-        for message in messages_to_send:
-            compilation['messages'].append(message)
-        self.to_send = []
-        await self.send(compilation)
-        if len(compilation['messages']) > 0:
-            log.debug('Sent %s messages' % len(compilation))
-            return
+        print('IN MESSAGES')
+        while True:
+            try:
+                messages_to_send = self.to_send[:]
+                if len(messages_to_send) == 0:
+                    await asyncio.sleep(self.clock.get_tick())
+                    continue
+                self.to_send = []
+                compilation = {'messages':[]}
+                for message in messages_to_send:
+                    compilation['messages'].append(message)
+                self.to_send = []
+                await self.send(compilation)
+                
+                if len(compilation['messages']) > 0:
+                    log.debug('Sent %s messages' % len(compilation))
+            except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
+                    break
+        print('OUT MESSAGES')
         
 
     async def send(self, data):
@@ -50,10 +63,25 @@ class BaseClient:
         await self.websocket.send(json.dumps(data))
 
 
+    async def recv(self):
+        print('IN RECV')
+        while True:
+            try:
+                
+                message = await self.websocket.recv()
+                messages = json.loads(message)
+                for event in messages['messages']:
+                    self.messages.append(event)
+            except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
+                    log.error('Connection Closed from server-side')
+                    self.messages.append({'action':'disconnected'})
+                    break
+        print('OUT RECV')
+
     async def main(self):
         try:
             ip = socket.gethostbyname(self.host)
-            if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+            if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.') or ip.startswith('127.0.0.1'):
                 URI = 'ws://' + self.host + ':' + str(self.port) + '/'
             else:
                 URI = 'wss://' + self.host + '/'
@@ -64,20 +92,12 @@ class BaseClient:
         async with websockets.connect(URI) as websocket:
             self.websocket = websocket
             self.to_send.append({'action':'connection'})
-            await self.send_messages()
-            log.debug('Sent initial message')
-            try:
-                while True:
-                    message = await websocket.recv()
-                    try:
-                        messages = json.loads(message)
-                        for event in messages['messages']:
-                            self.messages.append(event)
-                        await self.send_messages()
-                    except json.JSONDecodeError as exc:
-                        await self.error('Invalid JSON: ' + exc)
-            except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
-                log.error('Connection Closed from server-side')
+            log.debug('Sending initial message')
+            task1 = asyncio.create_task(self.recv())
+            task2 = asyncio.create_task(self.send_messages())
+
+            # Wait for tasks to complete
+            await asyncio.gather(task1, task2)
 
         
     async def error(self, message):
@@ -122,8 +142,8 @@ class Client:
             if message['action'] == 'connected':
                 self._connected = True
             if message['action'] == 'disconnected':
-                self.Network_diconnected(message)
-                log.info('Connection was rejected. The server was found, but it did not like you for some reason.')
+                self.Network_disconnected(message)
+                log.info('Disconnection.')
                 sys.exit()
             if hasattr(self, 'Network_' + message['action']):
                 getattr(self, 'Network_' + message['action'])(message)  # Calls the Network function to handle an action. `message` will hold the data.

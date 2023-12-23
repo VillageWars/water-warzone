@@ -1,0 +1,12 @@
+Press F10 to use cheats. Once ready, ask Aaron to type an admin password to use.
+
+To make the walls fall immediately, use: makeWallsFall(self)
+To kick another player, use: kick(self, <playername>)
+To give yourself 10000 gold, use: self.character.gold += 10000
+To give yourself 10000 food, use: self.character.food += 10000
+To give a building extra health, use: building=self.get_buildings()[<building number>];building.max_health=building.health=<health>
+(For "building number," the Central Building will be 0, the first building you place will be 1, the second will be 2, etc.)
+To make the server think that you've won, use: self.server.terminate(self)
+To trigger a barbarian raid, use: BarbarianRaid(self.server, <number of barbarians>, <spawn location (choose one of North, South, East, or West)>)
+(No more than 50!)
+To kill another player, use: kill(self, <playername>)

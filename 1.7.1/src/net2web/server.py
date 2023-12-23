@@ -6,8 +6,11 @@ import os
 import signal
 import threading
 import secrets
+import time
 
 import logging as log
+
+from .toolbox import Clock
 
 
 class BaseChannel:
@@ -16,6 +19,7 @@ class BaseChannel:
         self.messages = []
         self.to_send = []
         self.id = secrets.token_hex()
+        self.clock = Clock(30)
 
     async def send(self, data):
         """
@@ -25,34 +29,50 @@ class BaseChannel:
         await self.websocket.send(json.dumps(data))
 
     async def send_messages(self):
-        compilation = {'messages':[]}
-        for message in self.to_send:
-            compilation['messages'].append(message)
-        self.to_send = []
-        await self.send(compilation)
-        if len(compilation['messages']) > 0:
-            log.debug('Sent %s messages' % len(compilation))
-            return
+        print('IN MESSAGES')
+        while True:
+            try:
+                messages_to_send = self.to_send[:]
+                if len(messages_to_send) == 0:
+                    await asyncio.sleep(self.clock.get_tick())
+                    continue
+                self.to_send = []
+                compilation = {'messages':[]}
+                for message in messages_to_send:
+                    compilation['messages'].append(message)
+                await self.send(compilation)
+                
+                if len(compilation['messages']) > 0:
+                    log.debug('Sent %s messages' % len(compilation))
+            except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
+                    break
+        print('OUT MESSAGES')
         
+    async def recv(self):
+        print('IN RECV')
+        while True:
+            try:
+                message = await self.websocket.recv()
+            
+                messages = json.loads(message)
+                for event in messages['messages']:
+                    self.messages.append(event)
+            except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
+                    log.info('Connection Closed from client-side')
+                    self.messages.append({'action':'disconnected'})
+                    break
+        print('OUT RECV')
 
     async def handler(self, websocket):
         """
         Handle a connection and dispatch it according to who is connecting.
         """
         self.websocket = websocket
-        try:
-            while True:
-                message = await websocket.recv()
-                try:
-                    messages = json.loads(message)
-                    for event in messages['messages']:
-                        self.messages.append(event)
-                    await self.send_messages()
-                except json.JSONDecodeError as exc:
-                    await self.error('Invalid JSON: ' + exc)
-        except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
-            self.messages.append({'action':'disconnected'})
-            return
+        task1 = asyncio.create_task(self.recv())
+        task2 = asyncio.create_task(self.send_messages())
+
+        # Wait for tasks to complete
+        await asyncio.gather(task1, task2)
 
     
         
