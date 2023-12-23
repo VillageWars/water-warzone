@@ -34,7 +34,6 @@ class BaseClient:
         asyncio.run(self.main())
 
     async def send_messages(self):
-        print('IN MESSAGES')
         while True:
             try:
                 messages_to_send = self.to_send[:]
@@ -52,7 +51,6 @@ class BaseClient:
                     log.debug('Sent %s messages' % len(compilation))
             except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
                     break
-        print('OUT MESSAGES')
         
 
     async def send(self, data):
@@ -64,7 +62,6 @@ class BaseClient:
 
 
     async def recv(self):
-        print('IN RECV')
         while True:
             try:
                 
@@ -76,7 +73,6 @@ class BaseClient:
                     log.error('Connection Closed from server-side')
                     self.messages.append({'action':'disconnected'})
                     break
-        print('OUT RECV')
 
     async def main(self):
         try:

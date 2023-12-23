@@ -718,7 +718,7 @@ class MyGameServer(ParentServer):
                 log.info('Server shutting down')
                 self.tired = True
             self.clock.tick(1)
-        input('Press enter to exit\n')
+        print('Exiting')
         sys.exit()
         
         

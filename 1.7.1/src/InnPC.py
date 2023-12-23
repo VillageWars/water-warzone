@@ -1162,7 +1162,7 @@ class Advanced_balloonist(InnPC):
 
     @property
     def window(self):
-        base = {'text':(self.type + ':', 'I\m much more talented than the regular balloonist. You\'re lucky you got me!')}
+        base = {'text':(self.type + ':', 'I\'m much more talented than the regular balloonist. You\'re lucky you got me!')}
         base['options'] = (('+ Shot Speed (280 gold)', self.speedgun), ('Out', self.Out))
         return base
                 

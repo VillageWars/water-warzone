@@ -29,7 +29,6 @@ class BaseChannel:
         await self.websocket.send(json.dumps(data))
 
     async def send_messages(self):
-        print('IN MESSAGES')
         while True:
             try:
                 messages_to_send = self.to_send[:]
@@ -46,10 +45,8 @@ class BaseChannel:
                     log.debug('Sent %s messages' % len(compilation))
             except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
                     break
-        print('OUT MESSAGES')
         
     async def recv(self):
-        print('IN RECV')
         while True:
             try:
                 message = await self.websocket.recv()
@@ -61,7 +58,6 @@ class BaseChannel:
                     log.info('Connection Closed from client-side')
                     self.messages.append({'action':'disconnected'})
                     break
-        print('OUT RECV')
 
     async def handler(self, websocket):
         """
