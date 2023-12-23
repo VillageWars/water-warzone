@@ -43,9 +43,6 @@ class Character():
         elif __main__.GAMEMODE == 'Express':
             self.gold = 100
             self.food = 100
-        elif self.channel.username != __main__.CHALLENGE and __main__.CHALLENGE != 'f':
-            self.gold = 1000
-            self.food = 1000
         else:
             self.gold = 0
             self.food = 0
