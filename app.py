@@ -882,7 +882,7 @@ def check_internet(timeout=2):
 
 
 
-log.basicConfig(level=log.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log.basicConfig(level=log.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 log.info('Getting ready...')
 INTERNET = True
 
