@@ -889,14 +889,7 @@ INTERNET = True
 if "DYNO" in os.environ:
     ip = "water-warzone-0fc31e47a670.herokuapp.com"
 else:
-    if INTERNET:
-        ip = getmyip()
-    else:
-        INTERNET = False
-        try:
-            ip = getmyip()
-        except:
-            ip = '127.0.0.1'
+    ip = getmyip()
     
 port = 5555
 
@@ -930,22 +923,19 @@ server = MyGameServer(version, host=ip)
 flask_application = 'http://villagewars.pythonanywhere.com/'
 
 
-if INTERNET:
-    res = requests.get(flask_application + 'setserver/' + name + '/' + 'water-warzone-0fc31e47a670.herokuapp.com' + '/' + GAMEMODE)
-    res.raise_for_status()
+
+res = requests.get(flask_application + 'setserver/' + name + '/' + 'water-warzone-0fc31e47a670.herokuapp.com' + '/' + GAMEMODE)
+res.raise_for_status()
+log.debug('Sent initial server launch message to flask app')
 
 STARTTIME = time.monotonic()
 
 log.info(('Server "%s" launched with ip ' % name) + ip)
 
 def send_confirmation():
-    global INTERNET
-    if INTERNET:
-        try:
-            res = requests.get(flask_application + 'confirm_server/' + name)
-            res.raise_for_status()
-        except:
-            INTERNET = False
+    res = requests.get(flask_application + 'confirm_server/' + name)
+    res.raise_for_status()
+    log.debug('Sent confirmation message to flask app')
 
 """This is the loop that keeps going until the server is killed"""
 while not server.tired:
