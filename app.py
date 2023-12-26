@@ -8,12 +8,10 @@ import pygame
 import os
 import json
 import sys
+import console
 
 sys.path.append(os.path.abspath('1.7.1/src'))
 os.chdir('1.7.1/src')
-
-
-
 import toolbox
 from lobbyAvatar import LobbyAvatar
 import time
@@ -33,6 +31,7 @@ import zipfile2
 import threading
 import re
 import requests
+
 
 
 BUILDINGS = CentralBuilding, PortableCentralBuilding, MinersGuild, FarmersGuild, Balloonist, Inn, FitnessCenter, Gym, RunningTrack, HealthCenter, ConstructionSite, RobotFactory, ArcheryTower, BarrelMaker, BotanistsLab, RepairCenter, Ranch, AlchemistsLab, Market, TownHall, AdvancedBalloonistBuilding, Builders, RetiredBarbarianOutpost, AdventuringCenter
@@ -236,7 +235,9 @@ class ClientChannel(ParentChannel):
     def Network_version(self, data):
         self.version = data['version']
         self.ver_int = getVersionInt(self.version)
-
+    
+    def Network_console(self, data):
+        console.execute(self, data['command'])
 
     def Network_keys(self, data):
         if self.server.in_lobby:
