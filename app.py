@@ -64,7 +64,7 @@ if port:
     GAMEMODE = input('Gamemode = ') or 'Classic'
 else:
     GAMEMODE = 'Classic'
-log.info('Gamemode set to', GAMEMODE)
+log.info('Gamemode set to ' + GAMEMODE)
 GameServer.eval_gamemode(GAMEMODE)  # Figure out how many minutes for the Walls
 log.debug('Identifying server name')
 if port:
