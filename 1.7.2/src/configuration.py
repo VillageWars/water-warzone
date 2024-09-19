@@ -83,7 +83,9 @@ def init():
     global assets, images, audio, INTERNET
     log.debug('Testing Internet connection')
     INTERNET = check_internet()
-    
+
+    if 'DYNO' in os.environ:
+        return
     log.debug('Loading assets')
     assets = {}
     for root, dirs, files in os.walk(assets_dir):
