@@ -48,7 +48,7 @@ if not conf.INTERNET:
         ip = '127.0.0.1'
 elif ONLINE:
     ip = 'water-warzone-0fc31e47a670.herokuapp.com'  # DYNO means Heroku; Heroku means WaterWarzone
-    port = None
+    PORT = None
 else:
     ip = getmyip()
 
