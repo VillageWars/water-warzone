@@ -22,7 +22,7 @@ import time
 log.debug('Loading configuration')
 import configuration as conf  # Personal Module
 PATH = conf.PATH
-#conf.init()
+conf.init()
 
 
 # Third-Party Imports
