@@ -17,6 +17,7 @@ import threading
 
 # Configuration
 
+ONLINE = 'Procfile' in os.listdir()
 sys.path.append(os.path.abspath('./' + __version__ + '/src'))
 import configuration as conf
 PATH = conf.PATH
@@ -45,7 +46,7 @@ if not conf.INTERNET:
         ip = getmyip()
     except:
         ip = '127.0.0.1'
-elif 'DYNO' in os.environ:
+elif ONLINE:
     ip = 'water-warzone-0fc31e47a670.herokuapp.com'  # DYNO means Heroku; Heroku means WaterWarzone
     port = None
 else:
