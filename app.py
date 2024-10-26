@@ -1,10 +1,14 @@
-# Values
+# This file was created in 1.7.2 and is intended to be forwards compatible with servers.
+
 PORT = 5555  # Overwritten in WaterWarzone
-__version__ = '1.7.2'
+try:
+    with open('version screenshots/version_info.json', 'r') as fo: __version__ = json.loads(fo.read())['active']
+except:
+    __version__ = '1.7.2'
 
 # Python Standard Library Modules Import
 
-import logging as logging
+import logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')  # Set up logging
 log = logging.getLogger()
 log.debug('Loading environment')
@@ -17,7 +21,8 @@ import threading
 
 # Configuration
 
-ONLINE = 'Procfile' in os.listdir()
+ONLINE = 'Procfile' in os.listdir()  # Online server (WaterWarzone)
+system_args_present = len(sys.argv) > 1
 sys.path.append(os.path.abspath('./' + __version__ + '/src'))
 import configuration as conf
 PATH = conf.PATH
@@ -41,7 +46,6 @@ def send_confirmation():  # Tell villagewars.pythonanywhere.com that the server 
 
 log.debug('Identifying local IP (host)')
 if not conf.INTERNET:
-    log.warning('No Internet connection')
     try:
         ip = getmyip()
     except:
@@ -59,25 +63,27 @@ __version__ = conf.VERSION
 log.info('VillageWars Server ' + __version__)
 
 log.debug('Identifying gamemode')
-# Set the gamemode to one of these: 'Classic' or 'Express' or 'Extended' or 'OP' or 'Mutated' or 'Immediate'
-if port:
-    GAMEMODE = input('Gamemode = ') or 'Classic'
+if system_args_present:
+    GAMEMODE = sys.argv[1]
+elif port:
+    GAMEMODE = input('Gamemode (leave blank for "Classic"): ') or 'Classic'
 else:
     GAMEMODE = 'Classic'
 log.info('Gamemode set to ' + GAMEMODE)
-GameServer.eval_gamemode(GAMEMODE)  # Figure out how many minutes for the Walls
 log.debug('Identifying server name')
-if port:
+if system_args_present:
+    name = ' '.join(sys.argv[2:])
+elif port:
     hostname = socket.gethostname()
-    name = input('Please input the server\'s name (leave blank for "%s") : ' % hostname) or hostname
+    name = input('Server name (leave blank for "%s"): ' % hostname) or hostname
 else:
     name = 'WaterWarzone'
 
 log.debug('Launching server')
 if port:
-    server = GameServer.Server(__version__, host=ip, port=port)
+    server = GameServer.Server(__version__, GAMEMODE, host=ip, port=port)
 else:
-    server = GameServer.Server(__version__, host=ip)
+    server = GameServer.Server(__version__, GAMEMODE, host=ip)
 remote_application = 'https://villagewars.pythonanywhere.com/'
 
 if conf.INTERNET:
@@ -87,7 +93,13 @@ if conf.INTERNET:
 
 log.setLevel(logging.INFO)  # Get rid of debug
 
-log.info(('Server "%s" launched with ip ' % name) + ip)
+log.info('Server launched as "%s"' % name)
+log.info('IP: ' + ip)
+log.info('PORT: ' + str(port))
+if ONLINE:
+    log.info('URI: wss://' + ip)
+else:
+    log.info('URI: ws://' + ip + ':' + str(port))
 
 STARTTIME = time.monotonic()
 while not server.tired:
