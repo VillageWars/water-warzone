@@ -6,6 +6,8 @@ import subprocess
 import json
 import sys
 import os
+import logging
+import traceback
 
 # Configuration
 
@@ -237,4 +239,35 @@ def getVersionInt(version_str):
     parts = version_str.split('.')
     return int(parts[0]) * 10000 + int(parts[1]) * 100 + int(parts[2])
 
+def getTime(server):
+        if server.fallen:
+            return '0'
+        seconds = ((server.upwall.count // 30) % 60) + 1
+        minutes = (server.upwall.count // 30) // 60
+        if seconds == 60:
+            seconds = 0
+            minutes += 1
+        if minutes > 0 and seconds > 9:
+            return str(minutes) + ':' + str(seconds)
+        elif seconds > 9:
+            return str(seconds)
+        else:
+            if minutes > 0:
+                return str(minutes) + ':' + '0' + str(seconds)
+            else:
+                return str(seconds)
 
+def log_warning(warning):
+    logging.warning(warning + ' (...' + traceback.format_stack()[-3].strip()[98:] + ')')
+
+def format_cost(*original_cost):
+    if len(original_cost) == 1:
+        original_cost = original_cost[0]
+    cost = ''
+    if original_cost[0]:
+        cost += str(original_cost[0]) + ' gold'
+    if original_cost[0] and original_cost[1]:
+        cost += ' and '
+    if original_cost[1]:
+        cost += str(original_cost[1]) + ' food'
+    return cost

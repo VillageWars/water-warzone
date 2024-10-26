@@ -1,11 +1,13 @@
-import toolbox
 import os
 import zipfile2 as zipfile
 import sys
-import logging as log
+import logging
+logging.basicConfig(level=logging.DEBUG, format='%(levelname)s - %(message)s')
+log = logging.getLogger()
 import pymsgbox
 import re
 import requests
+import toolbox
 
 SKIP = []
 
@@ -13,8 +15,6 @@ path = os.path.abspath('../')
 regex = re.compile(r'(\d)+\.(\d)+\.(\d)+')
 __version__ = regex.search(path).group()
 version = __version__
-
-log.basicConfig(level=log.DEBUG, format='%(levelname)s - %(message)s')
 
 def compress_version(skip=None):
     if skip == None:
@@ -63,7 +63,7 @@ def compress_version(skip=None):
     log.debug('Successfully uploaded version info')
     response.raise_for_status()
     
-
+log.debug('Initializing')
 print('This will upload the current version the the VillageWars server. Are you sure you want to do this? (y/n)')
 a = input('> ').strip()[0].lower()
 print()

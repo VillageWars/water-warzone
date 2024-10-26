@@ -67,6 +67,7 @@ version_dir = src_dir[:-3]
 VillageWars_dir = version_dir[:-(1 + len(os.path.basename(version_dir[:-1])))]
 PATH = version_dir
 assets_dir = PATH + 'assets'
+sfx_dir = PATH + 'assets\\sfx\\'
 
 VERSION = os.path.basename(PATH[:-1])
 sys.path.append(PATH + 'src')
@@ -79,32 +80,32 @@ with open(PATH + 'conf/preferences.json', 'r') as fo:
     sys.path.extend(lib)
     MAP_TEXTURE = preferences.get('map', 'grass')
 
-def init():
+def init(load_assets=True):
     global assets, images, audio, INTERNET
     log.debug('Testing Internet connection')
     INTERNET = check_internet()
+    if not INTERNET:
+        log.warning('No Internet connection')
+    if load_assets:
+        log.debug('Loading assets')
+        assets = {}
+        for root, dirs, files in os.walk(assets_dir):
+            if root == assets_dir:
+                for file in files:
+                    assets[file] = resolve(root + '\\' + file)
+            else:
+                for file in files:
+                    assets[root[len(assets_dir)+1:] + '/' + file] = resolve(root + '\\' + file)
 
-    if 'DYNO' in os.environ:
-        return
-    log.debug('Loading assets')
-    assets = {}
-    for root, dirs, files in os.walk(assets_dir):
-        if root == assets_dir:
-            for file in files:
-                assets[file] = resolve(root + '\\' + file)
-        else:
-            for file in files:
-                assets[root[len(assets_dir)+1:] + '/' + file] = resolve(root + '\\' + file)
+        images = {}
+        for asset in assets:
+            if assets[asset]['type'] == 'image':
+                images[asset] = assets[asset]['contents']
 
-    images = {}
-    for asset in assets:
-        if assets[asset]['type'] == 'image':
-            images[asset] = assets[asset]['contents']
-
-    audio = {}
-    for asset in assets:
-        if assets[asset]['type'] == 'audio':
-            audio[asset.replace('sfx/', '')] = assets[asset]['contents']
+        audio = {}
+        for asset in assets:
+            if assets[asset]['type'] == 'audio':
+                audio[asset.replace('sfx/', '')] = assets[asset]['contents']
 
 if __name__ == '__main__':  # Only for testing
     init()

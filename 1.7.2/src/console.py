@@ -17,6 +17,6 @@ def execute(self, text):  # For the server
         sys.exit()
     elif command == 'say':  # Prank
         for p in self.server.players:
-            p.Send({'action':'prank', 'msg':' '.join(argv[1:])})
+            p.Send({'action':'msg', 'msg':' '.join(argv[1:])})
     
         

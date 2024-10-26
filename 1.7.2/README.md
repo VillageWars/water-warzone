@@ -1,5 +1,5 @@
 Welcome to VillageWars!
 
-See https://villagewars.pythonanywhere.com for more info.
+Official website: https://villagewars.pythonanywhere.com
 
-See https://villagewars.fandom.com/Category:Tutorial for tutorials.
+Tutorials: https://villagewars.fandom.com/Category:Tutorial

@@ -8,6 +8,8 @@ import threading
 import re
 import sys
 import os
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 
 # Configuration
 
@@ -72,8 +74,7 @@ class MyGameClient(ParentClient):
         when a new client is made.
         """
         super().__init__(host=host, port=port)
-
-        self.color = color
+        
         # Start the game
         pygame.init()
         pygame.mixer.pre_init(buffer=64)
@@ -83,6 +84,7 @@ class MyGameClient(ParentClient):
         self.screen = screen
         self.clock = clock
         self.skin = skin
+        self.color = color
         self.xp = xp
 
         self.fps_expected = 30
@@ -182,6 +184,7 @@ class MyGameClient(ParentClient):
         self.large_font = p.font.SysFont('default', 80)
         self.medium_font = p.font.SysFont('default', 40)
         self.small_font = p.font.SysFont('default', 20)
+        self.small_fantasy_font = p.font.SysFont('luminari', 20)
 
         self.crate = conf.res('crate.png', (50, 50))
         self.barrel = conf.res('Barrel.png', (50, 50))
@@ -193,8 +196,6 @@ class MyGameClient(ParentClient):
         self.spiky_bush = conf.images['spiky_bush.png']
 
         self.ready = False
-        self.ready_text = self.small_font.render('READY', True, (0,255,0))
-        self.not_ready_text = self.small_font.render('NOT READY', True, (255,0,0))
 
         self.host_text = self.small_font.render('host', True, (255,0,0))
         self.escape_count = 0
@@ -213,9 +214,9 @@ class MyGameClient(ParentClient):
         self.sound_cw = conf.audio['close_window.wav']
 
         self.musics = {
-            'steppingpebbles': PATH +'sfx/stepPebblesLoop.mp3',
-            'village': PATH +'sfx/villageLoop.mp3',
-            'barbarianraid': PATH +'sfx/War song.mp3'
+            'steppingpebbles': conf.sfx_dir + 'stepPebblesLoop.mp3',
+            'village': conf.sfx_dir + 'villageLoop.mp3',
+            'barbarianraid': conf.sfx_dir + 'War song.mp3'
             }
 
         self.paused = False
@@ -343,10 +344,6 @@ class MyGameClient(ParentClient):
                 self.F3 = not self.F3
             if event.type == KEYUP and event.key == K_F8:
                 self.Send({'action':'startgame'})  # Cheaty way to start the server before everyone's ready
-            #if event.type == KEYUP and event.key == K_ESCAPE:  # Removed because this is BAD!
-            #    if not self.escape_count:
-            #        self.Send({'action':'pause'})
-            #        self.escape_count = 30
             if event.type == MOUSEMOTION:
                 self.mouseX = event.pos[0]
                 self.mouseY = event.pos[1]
@@ -418,7 +415,7 @@ class MyGameClient(ParentClient):
         if True: #time.time() - data['timestamp'] < 0.5:
             self.fps_expected = 30
             for i in data['data']:
-                exec('self.Network_' + i['action'] + '(' + repr(i) + ')')
+                exec('self.Network_' + i['action'] + '(i)')
         else:
             self.fps_expected = 60
     
@@ -470,20 +467,14 @@ class MyGameClient(ParentClient):
         if rect.collidepoint((500,325)):
             image.fill((200,200,250,128))
             if not self.ready:
-                self.ready = not self.ready
+                self.ready = True
                 self.Send({'action':'ready', 'ready':self.ready})
-                
         else:
             image.fill((0,0,200,128))
             if self.ready:
-                self.ready = not self.ready
+                self.ready = False
                 self.Send({'action':'ready', 'ready':self.ready})
         self.toDrawNext.append([image, rect])
-
-
-        
-        
-        
 
     def Network_draw_background(self, data):
         self.toDrawNext.append([self.ocean_pics[self.ocean_frame], (0, 0)])
@@ -604,7 +595,7 @@ class MyGameClient(ParentClient):
 
 
     def Network_draw_barbarian(self, data):
-        if self.F3:
+        if self.F3 and not data['type'] == 'leader':
             image = self.barbarian_range
             rect = image.get_rect(center=data['coords'])
             self.toDrawNext.insert(6, (image, rect))
@@ -807,7 +798,7 @@ class MyGameClient(ParentClient):
         elif data['image'] == 'miner':
             image = self.miner
             name = 'Miner'
-        rect = image.get_rect(topleft=(data['coords']))
+        rect = image.get_rect(center=(data['coords']))
         image, rect = t.rotate(image, rect, data['angle'])
         self.toDrawNext.append([image, rect])
 
@@ -895,16 +886,17 @@ class MyGameClient(ParentClient):
     
 
     def Network_draw_balloon(self, data):
-        balloon_type = data.get('type', 'default')
-        image = self.balloon
-        if balloon_type == 'bolt':
-            image = self.bolt
-        if balloon_type == 'op':
+        image_id = data.get('id', 'default')
+        if image_id == 0:
+            image = self.balloon
+        if image_id == 1:
             image = self.op_balloon
-        if balloon_type == 'speedy':
+        if image_id == 2:
             image = self.speedy_balloon
-        if balloon_type == 'speedy+op':
+        if image_id == 3:
             image = self.speedy_plus_op
+        if image_id == 4:
+            image = self.bolt
         rect = image.get_rect(center=(data['coords']))
         image, rect = t.rotate(image, rect, data['angle'])
         self.toDrawNext.append([image, rect])
@@ -958,7 +950,7 @@ class MyGameClient(ParentClient):
             health_bar.fill((255, 0, 0))
             health_rect = health_bar.get_rect(midbottom=person_rect.midtop)
             
-            green_bar = p.Surface((int(data['health']/2), 10))
+            green_bar = p.Surface((int(data['health'] / 2), 10))
             green_bar.fill((0,255,0))
             health_bar.blit(green_bar, (0, 0))
             
@@ -1107,7 +1099,7 @@ class MyGameClient(ParentClient):
         image, rect = t.rotate(image, rect, data.get('angle', 0))
         self.toDrawNext.append([image, rect])
 
-        if data['image'] != 'barrel' and data['image'] != 'crate' and data['image'] != 'gate' and data['image'] != 'TNT' and data['image'] != 'spiky bush' and data['image'] != 'vine':
+        if data['image'] not in ('barrel', 'crate', 'gate', 'TNT', 'spiky bush', 'sappling'):
             health_bar = p.Surface((int(data['max_health']/2), 12))
             health_bar.fill((255, 0, 0))
             health_rect = health_bar.get_rect(midbottom=rect.midtop)
@@ -1137,10 +1129,10 @@ class MyGameClient(ParentClient):
         x = 200
         y = 200
 
-        info = self.small_font.render(data['window']['info'][0], True, (0,0,0))
+        info = self.small_fantasy_font.render(data['window']['info'][0], True, (0,0,0))
         text_rect = info.get_rect(topleft=(210,30))
         self.toDrawNext.append([info, text_rect])
-        info = self.small_font.render(data['window']['info'][1], True, (0,0,0))
+        info = self.small_fantasy_font.render(data['window']['info'][1], True, (0,0,0))
         text_rect = info.get_rect(topleft=(210,55))
         self.toDrawNext.append([info, text_rect])
 
@@ -1206,8 +1198,8 @@ class MyGameClient(ParentClient):
         y = 30
 
         for Y, thing in enumerate(data['window']['info']):
-            info = self.small_font.render(thing, True, (0,0,0))
-            text_rect = info.get_rect(topleft=(x, y + Y*15))
+            info = self.small_fantasy_font.render(thing, True, (0,0,0))
+            text_rect = info.get_rect(topleft=(x, y + Y*25))
             self.toDrawNext.append([info, text_rect])
 
         x = 200
@@ -1360,7 +1352,17 @@ def main(screen, clock, username, version, userInfo, ip, port=5555, musicPlaying
 
 
 if __name__ == '__main__':
-    print('You probably want to run main.py instead of this.')
+    print('This program is open in debug mode.')
+    conf.init()
+    p.init()
+    screen = p.display.set_mode((1000, 650))
+    clock = p.time.Clock()
+    username = 'f'
+    version = '1.7.2'
+    userInfo = {'color': (0,0,255), 'skin': 0, 'xp': 0, 'username': 'f', 'password': 'f'}
+    ip = '127.0.0.1'
+    musicPlaying = False
+    main(screen, clock, username, version, userInfo, ip, musicPlaying)
                    
 
 

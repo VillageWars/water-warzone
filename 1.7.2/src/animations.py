@@ -1,11 +1,13 @@
 import pygame
 
-class Animation(pygame.sprite.Sprite):
+from elements import Sprite
+
+class Animation(Sprite):
     def __init__(self, item):
-        super().__init__(self.gp)
+        super().__init__(self.groups)
         self.frame = 0
         self.len = 3
-        self.server = (item.server if hasattr(item, 'server') else item.channel.server)
+        self.server = item.server
         self.size = 50
         self.x = item.x
         self.y = item.y

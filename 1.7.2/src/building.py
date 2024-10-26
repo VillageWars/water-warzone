@@ -1,1813 +1,434 @@
 import pygame
 import toolbox as t
+import toolbox
 import math
+import logging
 import random as r
-from NPC import *
+import random
+from NPC import ArcheryTower, Robot, Collector
 import os
-#from InnPC import *
+import configuration as conf
+from elements import Building
+from InnPC import get_innpc, INNSTART, INNEND
 
 try:
-    DISHES = len(os.listdir('../assets/meals')) - 2
+    DISHES = len(os.listdir(conf.path + 'assets/meals')) - 2
 except:
     DISHES = 1
 
-class Building(pygame.sprite.Sprite):
-    dimensions = (600, 600)
-    def __init__(self, server, x, y, owner):
-        '''
-        owner must be client channel, not character.
+# As to not repeat this in the "no" option
+BTB = 'buy this building!'  
+UPG = 'upgrade this building!'
+BUY = 'buy this!'
 
-        '''
-        try:
-            pygame.sprite.Sprite.__init__(self, self.gp)
-        except:
-            pygame.sprite.Sprite.__init__(self, pygame.sprite.Group())
-        self.x = x
-        self.y = y
-        self.type = self.__class__.__qualname__
-        self.server = server
-        self.level = 1
-        self.owner = owner
-        self.max_health = self.health = 50
-        self.state = 'alive'
-        self.dimensions = type(self).dimensions
-
-        self.p = pygame.Surface((200, 200))
-        self.innerrect = self.p.get_rect(center=(x,y))
-        self.rect = pygame.Surface((50, 50)).get_rect(midtop=(self.innerrect.midbottom[0], self.innerrect.midbottom[1] + 110))
-
-        
-
-    def post_init(self, rect):
-        self.dimensions = type(self).dimensions
-        self.dimensions = rect.size
-        self.dim_rect = rect
-        self.server.building_blocks.append(self.dim_rect)
-        self.server.obs.append(self)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.Out)],
-                              'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-        
-
-    def update(self):
-        
-
-        for p in self.server.players:
-            if not p.pending:
-                player = p.character
-                angle = t.getAngle(self.rect.x, self.rect.y, player.x, player.y)
-
-                screen = pygame.Rect(0, 0, 1000, 650)
-                rect = pygame.Rect(0, 0, 1, 1)
-                rect.size = self.dim_rect.size
-                rect.topleft = (p.character.get_x(self.dim_rect), p.character.get_y(self.dim_rect))
-                if screen.colliderect(rect):
-                    p.to_send.append({'action':'draw_building',
-                        'image':'house',
-                        'coords':(player.get_x(self), player.get_y(self)),
-                        'health':self.health,
-                        'max_health':self.max_health,
-                        'angle':angle,
-                        'color':self.owner.color,
-                        'dimensions':self.dimensions,
-                        'type':self.type,
-                        'state':self.state,
-                        'level':self.level})
-
-
-
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.to_send.append({'action':'sound', 'sound':'building'})
-
-    def die(self):
-        pass
-
-    def isBuilding(self):
-        return True
-
-
-    def Out(self, character):
-        
-        character.channel.in_window = False
-        character.shoot_cooldown = 20
-        character.channel.to_send.append({'action':'sound', 'sound':'cw'})
-
-
-    def heal(self, player):
-        if player != self.owner.character:
-            player.channel.message = "You can't heal someone else's building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        
-        elif player.food > 4:
-            if self.health < self.max_health:
-                self.health += 10
-                if self.health > self.max_health:
-                    self.health = self.max_health
-                player.channel.message = 'You just healed this building 10 health for 5 food.'
-                player.channel.message_count = 120
-                player.channel.message_color = (255,205,0)
-                player.food -= 5
-            else:
-                player.channel.message = 'This building is already at full health!'
-                player.channel.message_count = 150
-                player.channel.message_color = (50,50,255)
-        else:
-            player.channel.message = "You don't have enough food to heal this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-
-    def clear(self, player):
-        self.Out(player)
-        if player.gold > 1:
-            player.channel.message = 'Cleared building for 2 gold'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 2
-            if self.dim_rect in self.server.building_blocks:
-                self.server.building_blocks.remove(self.dim_rect)
-            if self in self.server.obs:
-                self.server.obs.remove(self)
-            self.kill()
-            
-        else:
-            player.channel.message = "You don't have enough gold to clear this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        
-
-
+def buy_building(channel, building):
+    channel.build_to_place = building
+    channel.text = 'Right click to place building'
 
 class CentralBuilding(Building):
+    type = 'Central Building'
+    info = 'The Central Building is for buying other buildings.', 'If all your buildings are destroyed, you will not respawn.'
     dimensions = (675, 550)
-    def __init__(self, server, x, y, owner, rect=None):
-        Building.__init__(self, server, x, y, owner)
-        self.type = 'Central Building'
-        self.max_health = self.health = 420
-        self.dimensions = type(self).dimensions
-        self.info = ('The Central Building is for buying other buildings.', 'If all your buildings are destroyed, you will not respawn.')
+    max_health = 420
+    def options(self, character):
+        return [{'name': 'Portable Central Building',
+                    'gold-cost': 10,
+                    'food-cost': 10,
+                    'action': self.buy_portable_central_building,
+                    'no': BTB},
+                {'name': 'Fitness Center',
+                    'food-cost': 50,
+                    'action': self.buy_fitness_center,
+                    'no': BTB},
+                {'name': 'Balloonist',
+                    'gold-cost': 30,
+                    'action': self.buy_balloonist,
+                    'no': BTB},
+                {'name': 'Farmer\'s Guild',
+                    'food-cost': 25,
+                    'action': self.buy_farmers_guild,
+                    'no': BTB},
+                {'name': 'Miner\'s Guild',
+                    'gold-cost': 25,
+                    'action': self.buy_miners_guild,
+                    'no': BTB},
+                {'name': 'Construction Site',
+                    'gold-cost': 60,
+                    'action': self.buy_construction_site,
+                    'no': BTB},
+                {'name': 'Restaurant',
+                    'food-cost': 60,
+                    'action': self.buy_restaurant,
+                    'no': BTB},
+                {'name': 'Inn',
+                    'food-cost': 100,
+                    'action': self.buy_inn,
+                    'no': BTB}]
 
-        if rect is None:
-            rect = pygame.Rect(0, 0, 675, 550)
-            rect.midtop = (x, y-round(self.p.get_height()/2))
-        self.post_init(rect)
+    def get_4th_info(self, channel):
+        return 'Number of non-broken buildings', str(len(channel.get_buildings()))
 
+    def buy_portable_central_building(self, character):
+        buy_building(character.channel, PortableCentralBuilding)
+        character.channel.add_message('You just bought a Portable Central Building for 10 gold and 10 food.')
 
-    def update(self):
-        Building.update(self)
-        if False: # Makes building move, lol
-            self.dim_rect.x += 3
-            self.rect.x += 3
-            self.x += 3
-            self.innerrect.x += 3
+    def buy_fitness_center(self, character):
+        buy_building(character.channel, FitnessCenter)
+        character.channel.add_message('You just bought a Fitness Center for 50 food.')
 
-    
-        
-        
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.buy_central_building), (2, self.buy_fitness_center), (3, self.buy_balloonist), (4, self.buy_farmers_guild), (5, self.buy_miners_guild), (6, self.buy_construction_site), (7, self.buy_restaurant), (8, self.buy_inn), (9, self.Out)],
-                              'simp':['Heal (5 food)', 'Portable Central Building (10 gold, 10 food)', 'Fitness Center (50 food)', 'Balloonist (30 gold)', "Farmer's Guild (25 food)", "Miner's Guild (25 gold)", 'Construction Site (60 gold)', 'Restaurant (80 food)', 'Inn (100 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
+    def buy_farmers_guild(self, character):
+        buy_building(character.channel, FarmersGuild)
+        character.channel.add_message('You just bought a Farmer\'s Guild for 25 food.')
 
-    def buy_central_building(self, player):
-        if player.food > 9:
-            if player.gold > 9:
+    def buy_miners_guild(self, character):
+        buy_building(character.channel, MinersGuild)
+        character.channel.add_message('You just bought a Miner\'s Guild for 25 gold.')
 
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = PortableCentralBuilding
-                player.channel.message = 'You just bought a Portable Central Building for 10 gold and 10 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 10
-                player.food -= 10
-            else:
-                player.channel.message = "You don't have enough gold to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        else:
-            if player.gold > 9:
-                player.channel.message = "You don't have enough food to buy this!"
-            else:
-                player.channel.message = "You can't afford this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
+    def buy_balloonist(self, character):
+        buy_building(character.channel, Balloonist)
+        character.channel.add_message('You just bought a Balloonist for 30 gold.')
 
-    def buy_fitness_center(self, player):
-        if player.food > 49:
+    def buy_construction_site(self, character):
+        buy_building(character.channel, ConstructionSite)
+        character.channel.add_message('You just bought a Construction Site for 60 gold.')
 
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = FitnessCenter
-            player.channel.message = 'You just bought a Fitness Center for 50 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 50
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
+    def buy_restaurant(self, character):
+        buy_building(character.channel, Restaurant)
+        character.channel.add_message('You just bought a Restaurant for 80 food.')
 
-    def buy_farmers_guild(self, player):
-        if player.food > 24:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = FarmersGuild
-            player.channel.message = "You just bought a Farmer's Guild for 25 food."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 25
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_miners_guild(self, player):
-        if player.gold > 24:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = MinersGuild
-            player.channel.message = "You just bought a Miner's Guild for 25 gold."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 25
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-        
+    def buy_inn(self, character):
+        buy_building(character.channel, Inn)
+        character.channel.add_message('You just bought an Inn for 100 food.')
 
 
-    def buy_balloonist(self, player):
-        if player.gold > 29:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = Balloonist
-            player.channel.message = 'You just bought a Balloonist for 30 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 30
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-
-    def buy_construction_site(self, player):
-        if player.gold > 59:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = ConstructionSite
-            player.channel.message = 'You just bought a Construction Site for 60 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 60
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-    def buy_restaurant(self, player):
-        if player.food > 79:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = Restaurant
-            player.channel.message = 'You just bought a Restaurant for 80 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 80
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_inn(self, player):
-
-        
-        yes = True
-        for b in player.channel.get_buildings():
-            if b.type == 'Inn':
-                yes = False
-                player.channel.message = 'You already have an Inn! You can only have one at a time.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        if yes:
-            if player.food > 99:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = Inn
-                player.channel.message = 'You just bought an Inn for 100 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 100
-            else:
-                player.channel.message = "You don't have enough food to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-
-
-    
-
-
-class PortableCentralBuilding(Building):
+class PortableCentralBuilding(CentralBuilding):
+    type = 'Portable Central Building'
+    info = 'This offers the same options as the Central Building, so you', 'can buy buildings even after your Central Buildings is broken.'
     dimensions = (560, 560)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.type = 'Portable Central Building'
-        self.max_health = self.health = 110
-        self.dimensions = type(self).dimensions
-        self.info = ('This building works the same way as the regular Central Building,', 'so you can use it as a portable central building.')
-
-        self.post_init(rect)
-
-
-    def update(self):
-        Building.update(self)
-
-
-
-    
-        
-        
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.buy_central_building), (2, self.buy_fitness_center), (3, self.buy_balloonist), (4, self.buy_farmers_guild), (5, self.buy_miners_guild), (6, self.buy_construction_site), (7, self.buy_restraunt), (8, self.buy_inn), (9, self.Out)],
-                              'simp':['Heal (5 food)', 'Portable Central Building (10 gold, 10 food)', 'Fitness Center (50 food)', 'Balloonist (30 gold)', "Farmer's Guild (25 food)", "Miner's Guild (25 gold)", 'Construction Site (60 gold)', 'Restaurant (80 food)', 'Inn (100 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              '4th_info':('Number of non-broken buildings', str(len(channel.get_buildings()))),
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-    def buy_central_building(self, player):
-        if player.food > 9:
-            if player.gold > 9:
-    
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = PortableCentralBuilding
-                player.channel.message = 'You just bought a Portable Central Building for 10 gold and 10 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 10
-                player.food -= 10
-            else:
-                player.channel.message = "You don't have enough gold to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        else:
-            if player.gold > 9:
-                player.channel.message = "You don't have enough food to buy this!"
-            else:
-                player.channel.message = "You can't afford this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-    
-
-    def buy_fitness_center(self, player):
-        if player.food > 49:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = FitnessCenter
-            player.channel.message = 'You just bought a Fitness Center for 50 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 50
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_inn(self, player):
-
-        
-        yes = True
-        for b in player.channel.get_buildings():
-            if b.type == 'Inn':
-                yes = False
-                player.channel.message = 'You already have an Inn! You can only have one at a time.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        if yes:
-            if player.food > 99:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = Inn
-                player.channel.message = 'You just bought an Inn for 100 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 100
-            else:
-                player.channel.message = "You don't have enough food to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_farmers_guild(self, player):
-        if player.food > 24:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = FarmersGuild
-            player.channel.message = "You just bought a Farmer's Guild for 25 food."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 25
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_miners_guild(self, player):
-        if player.gold > 24:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = MinersGuild
-            player.channel.message = "You just bought a Miner's Guild for 25 gold."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 25
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-        
-
-
-    def buy_balloonist(self, player):
-        if player.gold > 29:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = Balloonist
-            player.channel.message = 'You just bought a Balloonist for 30 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 30
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-
-    def buy_construction_site(self, player):
-        if player.gold > 59:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = ConstructionSite
-            player.channel.message = 'You just bought a Construction Site for 60 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 60
-        else:
-            player.channel.message = "You don't have enough gold to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'gold'
-    def buy_restraunt(self, player):
-        if player.food > 79:
-
-            player.channel.text = 'Right click to place building'
-            player.channel.build_to_place = Restaurant
-            player.channel.message = 'You just bought a Restaurant for 80 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 80
-        else:
-            player.channel.message = "You don't have enough food to buy this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
+    max_health = 110
 
 class RunningTrack(Building):
+    type = 'Running Track'
+    info = 'This building increases your speed! Upgrade it to increase it', 'even more. You can only have one Running Track at a time.'
     dimensions = (700, 620)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building increases your speed! Upgrade it to increase it', 'even more. (You can only have one Running Track at a time)')
-        self.type = 'Running Track'
-        self.health = self.max_health = 180
-        self.dimensions = type(self).dimensions
-        self.owner.character.speed += 3
-        self.owner.character.moving += 3
-        self.upgrade_cost = 90
-
-        self.post_init(rect)
-
-    def level_up(self, player):
-        if self.level == 3:
-            return
-        if player.food > self.upgrade_cost - 1:
-            self.level += 1
-            self.owner.character.speed += 3
-            self.owner.character.moving += 3
-            player.channel.message = 'You upgraded this Running Track to level ' + str(self.level) + ' for ' + str(self.upgrade_cost) + ' food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= self.upgrade_cost
-            self.upgrade_cost += 30
-            self.health = self.max_health = self.max_health + 40
-            
-        else:
-            player.channel.message = "You don't have enough food to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-
-        
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            if self.level < 3:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Speed', str(self.owner.character.speed)),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.level_up), (1, self.heal), (2, self.Out)],
-                                  'simp':['Upgrade (' + str(self.upgrade_cost) + ' food)', 'Heal (5 food)', 'Out']}
-            else:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Speed', str(self.owner.character.speed)),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.heal), (1, self.Out)],
-                                  'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              '4th_info':('Speed', str(self.owner.character.speed)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.heal), (2, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-        
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.Send({'action':'sound', 'sound':'building'})
-
-
-
-                
-                self.owner.character.speed = 8
-                self.owner.character.moving = 8
+    max_health = 180
+    upgrade_cost = [0, 90]
+    def init(self):
+        self.character.speed += 3
+        self.character.moving += 3
+    def options(self, character):  # Building.condition() removes unavailable options automatically
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def get_4th_info(self, channel):
+        return 'Speed', str(channel.character.speed)
+    def level_up(self, character):
+        self.character.speed += 3
+        self.character.moving += 3
+        self.upgrade_cost[1] += 30
+        self.health = self.max_health = self.max_health + 40
+    def die(self):
+        self.character.speed = 8
+        self.character.moving = 8
                 
 class Gym(Building):
+    type = 'Gym'
+    info = 'This building increases your resistance! Upgrade it to increase', 'it even more. You can only have one Gym at a time.'
     dimensions = (700, 620)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building increases your resistance! Upgrade it to increase it', 'even more. (You can only have one Gym at a time)')
-        self.type = 'Gym'
-        self.health = self.max_health = 180
-        self.dimensions = type(self).dimensions
-        self.owner.character.strength += 2
-        
-        self.upgrade_cost = 90
-
-        self.post_init(rect)
-
-    def level_up(self, player):
-        if self.level == 3:
-            return
-        if player.food > self.upgrade_cost - 1:
-            self.level += 1
-            self.owner.character.strength += 2
-            
-            player.channel.message = 'You upgraded this Gym to level ' + str(self.level) + ' for ' + str(self.upgrade_cost) + ' food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= self.upgrade_cost
-            self.upgrade_cost += 30
-            self.health = self.max_health = self.max_health + 40
-            
-        else:
-            player.channel.message = "You don't have enough food to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-
-        
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            if self.level < 3:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Resistance', str(self.owner.character.strength)),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.level_up), (1, self.heal), (2, self.Out)],
-                                  'simp':['Upgrade (' + str(self.upgrade_cost) + ' food)', 'Heal (5 food)', 'Out']}
-            else:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Resistance', str(self.owner.character.strength)),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.heal), (1, self.Out)],
-                                  'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                                  '4th_info':('Resistance', str(self.owner.character.strength)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-            
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.Send({'action':'sound', 'sound':'building'})
-                self.owner.character.strength = 0
+    max_health = 180
+    upgrade_cost = [0, 90]
+    def init(self):
+        self.character.strength += 2
+    def options(self, character):  # Building.condition() removes unavailable options automatically
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def get_4th_info(self, channel):
+        return 'Resistance', str(channel.character.strength)
+    def level_up(self, character):
+        self.character.strength += 2
+        self.upgrade_cost[1] += 30
+        self.health = self.max_health = self.max_health + 40
+    def die(self):
+        self.character.strength = 0
                 
-
 class HealthCenter(Building):
+    type = 'Health Center'
+    info = 'This building increases your maximum health! Upgrade it to increase it', 'even more. You can only have one Health Center at a time.'
     dimensions = (700, 620)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building increases your maximum health! Upgrade it to increase it', 'even more. (You can only have one Health Center at a time)')
-        self.type = 'Health Center'
-        self.health = self.max_health = 180
-        self.dimensions = type(self).dimensions
-        self.owner.character.max_health += 30
-        self.owner.character.health += 30
-        
-        self.upgrade_cost = 90
-
-        self.post_init(rect)
-
-    def level_up(self, player):
-        if self.level == 3:
-            return
-        if player.food > self.upgrade_cost - 1:
-            self.level += 1
-            self.owner.character.max_health += 30
-            self.owner.character.health += 30
-            
-            player.channel.message = 'You upgraded this Health Center to level ' + str(self.level) + ' for ' + str(self.upgrade_cost) + ' food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= self.upgrade_cost
-            self.upgrade_cost += 30
-            self.health = self.max_health = self.max_health + 40
-            
-        else:
-            player.channel.message = "You don't have enough food to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-
-        
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            if self.level < 3:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Player health', ('%s/%s' % (self.owner.character.health, self.owner.character.max_health))),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.level_up), (1, self.heal), (2, self.Out)],
-                                  'simp':['Upgrade (' + str(self.upgrade_cost) + ' food)', 'Heal (5 food)', 'Out']}
-            else:
-                channel.window = {'text':self.info,
-                                  '4th_info':('Player health', ('%s/%s' % (self.owner.character.health, self.owner.character.max_health))),
-                                  'health':(self.health, self.max_health),
-                                  'building':self,
-                                  'level':self.level,
-                                  'options':[(0, self.heal), (1, self.Out)],
-                                  'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                                  '4th_info':('Player health', ('%s/%s' % (self.owner.character.health, self.owner.character.max_health))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-            
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.Send({'action':'sound', 'sound':'building'})
-                self.owner.character.max_health = 100
-                if self.owner.character.health > 100:
-                    self.owner.character.health = 100
-                
-
-
-
+    max_health = 180
+    upgrade_cost = [0, 90]
+    def init(self):
+        self.character.max_health += 30
+        self.character.health += 30
+    def options(self, character):  # Building.condition() removes unavailable options automatically
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def get_4th_info(self, channel):
+        return 'character health', ('%s/%s' % (channel.character.health, channel.character.max_health))
+    def level_up(self, character):
+        self.character.max_health += 30
+        self.character.health += 30
+        self.upgrade_cost[1] += 30
+        self.health = self.max_health = self.max_health + 40
+    def die(self):
+        self.character.max_health = 100
+        self.character.health = min(100, self.character.health)
 
 class FitnessCenter(Building):
+    type = 'Fitness Center'
+    info = 'This building lets you buy the 3 fitness', 'buildings: Running Track, Gym and Health Center.'
     dimensions = (585, 600)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building lets you buy the 3 fitness', 'buildings: Running Track, Gym and Health Center.')
-        self.type = 'Fitness Center'
-        self.health = self.max_health = 140
-        self.dimensions = type(self).dimensions
-
-        self.post_init(rect)
-
-    def buy_running_track(self, player):
-        yes = True
-        for b in player.channel.get_buildings():
-            if b.type == 'Running Track':
-                yes = False
-                player.channel.message = 'You already have a Running Track! You can only have one at a time.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-                
-
-        if yes:
-            if player.food > 74:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = RunningTrack
-                player.channel.message = 'You just bought a Running Track for 75 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 75
-            else:
-                player.channel.message = "You don't have enough food to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_gym(self, player):
-        yes = True
-        for b in player.channel.get_buildings():
-            if b.type == 'Gym':
-                yes = False
-                player.channel.message = 'You already have a Gym! You can only have one at a time.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-                
-
-        if yes:
-            if player.food > 74:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = Gym
-                player.channel.message = 'You just bought a Gym for 75 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 75
-            else:
-                player.channel.message = "You don't have enough food to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-    def buy_health_center(self, player):
-        yes = True
-        for b in player.channel.get_buildings():
-            if b.type == 'Health Center':
-                yes = False
-                player.channel.message = 'You already have a Health Center! You can only have one at a time.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-                
-
-        if yes:
-            if player.food > 74:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = HealthCenter
-                player.channel.message = 'You just bought a Health Center for 75 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 75
-            else:
-                player.channel.message = "You don't have enough food to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        self.Out(player)
-        player.spence = 'food'
-
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Number of fitness buildings', ('%s/3' % len([b for b in self.owner.get_buildings() if b.type in ('Health Center', 'Gym', 'Running Track')]))),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.buy_running_track), (2, self.buy_gym), (3, self.buy_health_center), (4, self.Out)],
-                              'simp':['Heal (5 food)', 'Running Track (75 food)', 'Gym (75 food)', 'Health Center (75 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              '4th_info':('Number of fitness buildings', ('%s/3' % len([b for b in self.owner.get_buildings() if b.type in ('Health Center', 'Gym', 'Running Track')]))),
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-                              
-
+    max_health = 140
+    def options(self, character):
+        return [{'name': 'Running Track',
+                    'food-cost': 75,
+                    'action': self.buy_running_track,
+                    'no': BTB},
+                {'name': 'Gym',
+                    'food-cost': 75,
+                    'action': self.buy_gym,
+                    'no': BTB},
+                {'name': 'Health Center',
+                    'food-cost': 75,
+                    'action': self.buy_health_center,
+                    'no': BTB}]
+    def get_4th_info(self, channel):
+        return 'Number of fitness buildings', ('%s/3' % len([b for b in channel.get_buildings() if b.type in ('Health Center', 'Gym', 'Running Track')]))
+    def buy_running_track(self, character):
+        buy_building(character.channel, RunningTrack)
+        character.channel.add_message('You just bought a Running Track for 75 food.')
+    def buy_gym(self, character):
+        buy_building(character.channel, Gym)
+        character.channel.add_message('You just bought a Gym for 75 food.')
+    def buy_health_center(self, character):
+        buy_building(character.channel, HealthCenter)
+        character.channel.add_message('You just bought a Health Center for 75 food.')
 
 class Balloonist(Building):
+    type = 'Balloonist'
+    info = 'This building lets you upgrade some of your attack stats.', 'Note: Other characters can\'t upgrade their own attack here.'
     dimensions = (500, 495)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building lets you upgrade your attack stats.', '')
-        self.type = 'Balloonist'
-        self.health = self.max_health = 120
-        self.dimensions = type(self).dimensions
-        self.upgrade_cost = 50
-
-
-        self.post_init(rect)
-
-    def level_up(self, player):
-        if player.gold > self.upgrade_cost - 1:
-            self.level += 1
-            
-            
-            player.channel.message = 'You upgraded this Balloonist to level ' + str(self.level) + ' for ' + str(self.upgrade_cost) + ' gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= self.upgrade_cost
-            self.upgrade_cost += 20
-            self.health = self.max_health = self.max_health + 50
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Attack Damage', str(self.owner.character.attack)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.level_up), (1, self.heal), (2, self.upgrade_balloon_damage), (3, self.upgrade_balloon_speed), (4, self.Out)],
-                              'simp':['Upgrade (' + str(self.upgrade_cost) + ' gold)', 'Heal (5 food)', ' + Balloon Attack (' + str(channel.character.damage_cost) + ' gold)', ' + Balloon Speed (' + str(channel.character.speed_cost) + ' gold)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              '4th_info':('Attack Damage', str(self.owner.character.attack)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-    def upgrade_balloon_speed(self, player):
-        if player.gold > player.speed_cost - 1:
-                
-            player.balloon_speed += 3
-            player.knockback += 8
-            
-            player.channel.message = "You upgraded your balloons' speed for " + str(self.owner.character.speed_cost) + " gold."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= player.speed_cost
-
-            player.speed_cost += 2
-
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade your balloons' speed!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    
-    def upgrade_balloon_damage(self, player):
-        if player.gold > player.damage_cost - 1:
-            
-            player.attack += 1
-            
-            player.channel.message = "You upgraded your attack for " + str(self.owner.character.damage_cost) + " gold."
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= player.damage_cost
-
-            player.damage_cost += 10
-
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade your attack!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-
-
+    max_health = 120
+    upgrade_cost = [50, 0]
+    def options(self, character):
+        return [{'name': 'Upgrade', 'gold-cost': self.upgrade_cost[0], 'action': self.upgrade, 'no': UPG},
+                {'name': '+ Balloon Damage',
+                    'gold-cost': self.character.damage_cost,
+                    'action': self.upgrade_balloon_damage,
+                    'no': 'upgrade your balloon damage!'},
+                {'name': '+ Balloon Velocity',
+                    'gold-cost': self.character.speed_cost,
+                    'action': self.upgrade_balloon_speed,
+                    'no': 'upgrade your balloon velocity!'}]
+    def get_4th_info(self, channel):
+        return 'Balloon Damage', str(channel.character.balloon_damage)
+    def level_up(self, character):
+        self.upgrade_cost[0] += 20
+        self.health = self.max_health = self.max_health + 50
+    def upgrade_balloon_speed(self, character):
+        character.balloon_speed += 3
+        character.channel.add_message('You upgraded your balloon velocity for ' + str(character.speed_cost) + ' gold!')
+        character.speed_cost += 2
+    def upgrade_balloon_damage(self, character):
+        character.balloon_damage += 1
+        character.channel.add_message('You upgraded your balloon damage for ' + str(character.damage_cost) + ' gold!')
+        character.damage_cost += 10
 
 class FarmersGuild(Building):
+    type = 'Farmer\'s Guild'
+    info = 'This building sends farmers out to collect food for you.', ''
     dimensions = (600, 500)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building sends farmers out to collect wheat for you.', '')
-        self.type = "Farmer's Guild"
-        self.health = self.max_health = 140
-        self.dimensions = type(self).dimensions
-        self.farmer = Farmer(self)
-
-        self.post_init(rect)
-
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.Send({'action':'sound', 'sound':'building'})
-                for farmer in self.server.NPCs:
-                    if farmer.building == self:
-                        farmer.kill()
-                
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Food Production Rate', str(1250 - self.farmer.farm.production)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.Out)],
-                              'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              '4th_info':('Food Production Rate', str(1250 - self.farmer.farm.production)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-    
-
-
-
+    max_health = 140
+    def init(self):
+        self.farmer = Collector(self)
+    def get_4th_info(self, channel):
+        return 'Food Production Rate', str(1250 - self.farmer.yard.production)
+    def die(self):
+        return [farmer.kill() for farmer in self.server.NPCs if farmer.building == self]  # Kill farmers
 
 class MinersGuild(Building):
+    type = 'Miner\'s Guild'
+    info = 'This building sends miners out to mine gold for you.', ''
     dimensions = (500, 600)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building sends miners out to mine gold for you.', '')
-        self.type = "Miner's Guild"
-        self.health = self.max_health = 140
-        self.dimensions = type(self).dimensions
-        self.miner = Miner(self)
-        
-
-        self.post_init(rect)
-
-    def getHurt(self, damage, attacker):
-        
-        if self.health > 0 and attacker != self.owner.character:
-            self.health -= damage
-            if self.health < 1:
-                self.state = 'broken'
-                if attacker.__class__.__name__ == 'Character':
-                    self.owner.message = attacker.channel.username + ' has broken one of your ' + self.type + 's.'
-                    attacker.destroyed += 1
-                else:
-                    self.owner.message = attacker + ' has broken one of your ' + self.type + 's.'
-                self.owner.message_count = 150
-                self.owner.message_color = (255,0,0)
-                self.health = 0
-
-                self.die()
-                for p in self.server.players:
-                    screen = pygame.Rect(0, 0, 1000, 650)
-                    screen.center = p.character.rect.center
-                    if screen.colliderect(self.rect):
-                        p.Send({'action':'sound', 'sound':'building'})
-                for miner in self.server.NPCs:
-                    if miner.building == self:
-                        miner.kill()
-                
-
-    
-
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Gold Discovery Rate', str(1250 - self.miner.farm.production)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.Out)],
-                              'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              '4th_info':('Gold Discovery Rate', str(1250 - self.miner.farm.production)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-
-
-        
-
-
-
-def builder(b, p, has_builder):
-    if b.isBuilding(object()):
-        dimensions = b.dimensions
-        if has_builder:
-            dimensions = (b.dimensions[0]*0.8, b.dimensions[1]*0.8)
-        x, y = p.x, p.y - 140
-        image = pygame.Surface((200, 200))
-        width, height = dimensions
-        rect = pygame.Rect(0, 0, width, height)
-        rect.midtop = (x, y-round(image.get_height()/2))
-
-    else:
-        x, y = p.x, p.y - 240
-        surf = pygame.Surface((360, 360))
-        rect = surf.get_rect(center=(x, y))
-
-    if rect.left < 0 or rect.right > 6000 or rect.top < 0 or rect.bottom > 3900:
-        return False, rect
-    
-    
-    
-    for obs in p.channel.server.building_blocks:
-        if rect.colliderect(obs):
-            return False, rect
-    return True, rect
-
-
+    max_health = 140
+    def init(self):
+        self.miner = Collector(self)
+    def get_4th_info(self, channel):
+        return 'Gold Discovery Rate', str(1250 - self.miner.yard.production)
+    def die(self):
+        return [miner.kill() for miner in self.server.NPCs if miner.building == self]  # Kill miners
 
 class ConstructionSite(Building):
+    type = 'Construction Site'
+    info = 'This building lets you buy defenses for your village.', 'Upgrade to buy Archery Towers, Robot Factories, Barrels...'
     dimensions = (560, 560)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building lets you buy defences for your village. Crates, Gates, Archery Towers,', 'Robot Factories...')
-        self.type = 'Construction Site'
-        self.health = self.max_health = 160
-        self.dimensions = type(self).dimensions
-        self.upgradable = True
-
-        self.post_init(rect)
-
-    def buy_crate(self, player):
-        if player.food > 1:
-            player.channel.message = 'You bought a crate for 2 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 2
-            player.crates += 1
-        else:
-            player.channel.message = "You don't have enough food for this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        
-        self.Out(player)
-
-    def buy_gate(self, player):
-        if player.gold > 39:
-            player.channel.message = 'You bought a gate for 40 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 40
-            player.channel.text = 'Press x to place gate'
-        else:
-            player.channel.message = "You don't have enough gold for this!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        
-        self.Out(player)
-
-    def buy_tnt(self, player):
-        if player.gold > 99:
-            if player.food > 99:
-                player.channel.message = 'You bought TNT for 100 gold and 100 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 100
-                player.food -= 100
-                player.channel.text = 'Press x to place TNT'
-            else:
-                player.channel.message = "You don't have enough food for this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        else:
-            if player.food > 99:
-                player.channel.message = "You don't have enough gold for this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-            else:
-                player.channel.message = "You can't afford this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        self.Out(player)
-
-    def buy_archery_tower(self, player):
-        if player.food > 19:
-            if player.gold > 109:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = ArcheryTower
-                player.channel.message = 'You just bought an Archery Tower for 110 gold and 20 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 110
-                player.food -= 20
-                player.spence = 'gold'
-            else:
-                player.channel.message = "You don't have enough gold to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        else:
-            if player.gold > 109:
-                player.channel.message = "You don't have enough food to buy this!"
-            else:
-                player.channel.message = "You can't afford an Archery Tower!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def level_up(self, player):
-        if player.gold > 29:
-            self.level = 2
-            
-            
-            player.channel.message = 'You upgraded this Construction Site to level 2 for 30 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 30
-            self.upgradable = False
-            self.health = self.max_health = 200
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def buy_robot_factory(self, player):
-        if player.food > 4:
-            if player.gold > 114:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = RobotFactory
-                player.channel.message = 'You just bought a Robot Factory for 115 gold and 5 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 115
-                player.food -= 5
-                player.spence = 'gold'
-            else:
-                player.channel.message = "You don't have enough gold to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        else:
-            if player.gold > 114:
-                player.channel.message = "You don't have enough food to buy this!"
-            else:
-                player.channel.message = "You can't afford this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def buy_barrel_maker(self, player):
-        if player.food > 64:
-            if player.gold > 49:
-
-                player.channel.text = 'Right click to place building'
-                player.channel.build_to_place = BarrelMaker
-                player.channel.message = 'You just bought a Barrel Maker for 50 gold and 65 food.'
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 50
-                player.food -= 65
-                player.spence = 'food'
-            else:
-                player.channel.message = "You don't have enough gold to buy this!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        
-        else:
-            if player.gold > 49:
-                player.channel.message = "You don't have enough food to buy this!"
-            else:
-                player.channel.message = "You can't afford this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        
-
-
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            if self.upgradable:
-                channel.in_window = True
-                channel.window = {'text':self.info,
-                              '4th_info':('Upgraded', 'False'),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.level_up), (1, self.heal), (2, self.buy_crate), (3, self.buy_gate), (4, self.buy_tnt), (5, self.Out)],
-                              'simp':['Upgrade (30 gold)', 'Heal (5 food)', 'Crate (2 food)', 'Gate (40 gold)', 'TNT (100 gold, 100 food)', 'Out']}
-            else:
-                channel.in_window = True
-                channel.window = {'text':self.info,
-                              '4th_info':('Upgraded', 'True'),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.buy_crate), (2, self.buy_gate), (3, self.buy_tnt), (4, self.buy_archery_tower), (5, self.buy_robot_factory), (6, self.buy_barrel_maker), (7, self.Out)],
-                              'simp':['Heal (5 food)', 'Crate (2 food)', 'Gate (40 gold)', 'TNT (100 gold, 100 food)', 'Archery Tower (110 gold, 20 food)', 'Robot Factory (115 gold, 5 food)', 'Barrel Maker (50 gold, 65 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              '4th_info':('Upgraded', str(self.level == 2)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
-
-
+    max_health = 160
+    def options(self, character):  # Building.condition() removes unavailable options automatically
+        return [{'name': 'Upgrade', 'gold-cost': 30, 'action': self.upgrade, 'no': UPG},
+                {'name': 'Crate', 'food-cost': 2, 'action': self.buy_crate, 'no': 'buy a crate!'},
+                {'name': 'Gate', 'gold-cost': 40, 'action': self.buy_gate, 'no': 'buy a gate!'},
+                {'name': 'TNT', 'gold-cost': 100, 'food-cost': 100, 'action': self.buy_tnt, 'no': 'buy TNT!'},
+                {'name': 'Archery Tower', 'gold-cost': 110, 'food-cost': 20, 'action': self.buy_archery_tower, 'no': 'buy an Archery Tower!'},
+                {'name': 'Robot Factory', 'gold-cost': 115, 'food-cost': 5, 'action': self.buy_robot_factory, 'no': BTB},
+                {'name': 'Barrel Maker', 'gold-cost': 50, 'food-cost': 65, 'action': self.buy_barrel_maker, 'no': BTB}]
+        return options
+    def get_4th_info(self, channel):
+        return 'Upgraded', str(self.level == 2)
+    def buy_crate(self, character):
+        character.channel.add_message('You bought a crate for 2 food.')
+        character.crates += 1
+    def buy_gate(self, character):
+        character.channel.add_message('You bought a gate for 40 gold.')
+        character.channel.text = 'Press x to place gate'
+    def buy_tnt(self, character):
+        character.channel.add_message('You bought TNT for 100 gold and 100 food.')
+        character.channel.text = 'Press x to place TNT'
+    def buy_archery_tower(self, character):
+        character.channel.text = 'Right click to place Archery Tower'
+        character.channel.build_to_place = ArcheryTower
+        character.channel.add_message('You just bought an Archery Tower for 110 gold and 20 food.')
+    def level_up(self, character):
+        self.health = self.max_health = 200  # Just one upgrade allowed
+    def buy_robot_factory(self, character):
+        buy_building(character.channel, RobotFactory)
+        character.channel.add_message('You just bought a Robot Factory for 115 gold and 5 food.')
+    def buy_barrel_maker(self, character):
+        buy_building(character.channel, BarrelMaker)
+        character.channel.add_message('You just bought a Barrel Maker for 50 gold and 65 food.')
 
 class Restaurant(Building):
+    type = 'Restaurant'
+    info = 'This building lets you buy meals, which restore your health', 'when you eat them.'
     dimensions = (600, 580)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building lets you buy meals, which heal you when you eat them.', '')
-        self.type = 'Restaurant'
-        self.health = self.max_health = 220
-        self.dimensions = type(self).dimensions
-
-        self.post_init(rect)
-
-    def buy_meal(self, player):
-
-        if player.food > 11:
-                if player.meal:
-                    player.channel.message = "You already have a meal! Eat it before buying another one."
-                    player.channel.message_count = 150
-                    player.channel.message_color = (0,0,255)
-
-                else:
-                    player.meal = True
-                    player.meal_type = r.randrange(DISHES)
-                    player.channel.message = "You bought a meal for 12 food."
-                    player.channel.message_count = 150
-                    player.channel.message_color = (255,205,0)
-                    player.food -= 12
-
-
-
-            
-        else:
-            player.channel.message = "You don't have enough food to buy a meal!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def dine_in(self, player):
-
-        if player.food > 5:
-                if player.meal:
-                    player.channel.message = "You already have a meal! Eat it before ordering one."
-                    player.channel.message_count = 150
-                    player.channel.message_color = (0,0,255)
-
-                else:
-                    player.channel.message = "You ate a meal for 6 food."
-                    player.channel.message_count = 150
-                    player.channel.message_color = (255,205,0)
-                    player.food -= 6
-                    player.dine_in()
-
-
-
-            
-        else:
-            player.channel.message = "You don't have enough food to order a meal!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Need meal', ('no' if channel.character.meal else 'yes')),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.buy_meal), (2, self.dine_in), (3, self.Out)],
-                              'simp':['Heal (5 food)', 'Take out (12 food)', 'Order meal (6 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              '4th_info':('Need meal', ('no' if channel.character.meal else 'yes')),
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
+    max_health = 220
+    def options(self, character):
+        return [{'name': 'Takeout',
+                    'action': self.buy_takeout,
+                    'food-cost': 12,
+                    'no': 'buy takeout!'},
+                {'name': 'Order Meal',
+                    'action': self.order_meal,
+                    'food-cost': 6,
+                    'no': 'order a meal!'}]
+    def get_4th_info(self, channel):
+        return 'Need takeout', ('No' if channel.character.meal else 'Yes')
+    def buy_takeout(self, character):
+        character.meal = True
+        character.meal_type = r.randrange(DISHES)
+        character.channel.add_message('You bought a meal for 12 food.')
+    def order_meal(self, character):
+        character.channel.add_message('You ate a meal for 6 food.')
+        character.dine_in()
 
 class RobotFactory(Building):
+    type = 'Robot Factory'
+    info = 'This building sends out several little robots who attack', 'nearby enemy characters. It\'s a good way to defend your village!'
     dimensions = (504, 500)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building sends out several little robots who attack', 'other players. It\'s a good way to defend your village!')
-        self.type = 'Robot Factory'
-        self.health = self.max_health = 120
-        self.dimensions = type(self).dimensions
-
-        self.post_init(rect)
-
+    max_health = 120
+    num_bots = 3
+    def init(self):
+        for i in range(self.num_bots): Robot(self)
+    def options(self, character):
+        return [{'name': 'Upgrade', 'action': self.upgrade, 'gold-cost': 40, 'no': UPG}]
+    def get_4th_info(self, channel):
+        return 'Robots', str(self.num_bots)
+    def level_up(self, character):
+        if self.max_health < 320:
+            self.max_health += 50
+        self.health = self.max_health
+        self.num_bots += 1
         Robot(self)
-        Robot(self)
-        Robot(self)
-
-        self.num_bots = 3
-
-    def level_up(self, player):
-        if player.gold > 39:
-            self.level  += 1
-            
-            
-            player.channel.message = 'You upgraded this Robot Factory to level ' + str(self.level) + ' for 40 gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= 40
-            self.upgradable = False
-            if self.max_health < 320: self.max_health += 50
-            self.health = self.max_health
-
-            Robot(self)
-            self.num_bots += 1
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Robots', str(self.num_bots)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.heal), (1, self.level_up), (2, self.Out)],
-                              'simp':['Heal (5 food)', 'Upgrade (40 gold)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              '4th_info':('Robots', str(self.num_bots)),
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
     def die(self):
-        for npc in self.server.NPCs:
-            if type(npc).__name__ == 'Robot' and npc.factory == self:
-                npc.kill()
-
-from InnPC import *
+        return [npc.kill() for npc in self.server.NPCs if (type(npc).__name__ == 'Robot' and npc.factory == self)] # Kill robots
 
 class Inn(Building):
+    type = 'Inn'
+    info = 'This building welcomes different NPCs that can trade', 'with you.'
     dimensions = (550, 490)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building welcomes different NPCs that can trade with you.', '')
-        self.type = 'Inn'
-        self.health = self.max_health = 240
-        self.dimensions = type(self).dimensions
-        self.NPC = None
-        self.count = r.randint(250, 750)
-        
-
-        self.post_init(rect)
-
-
-    def level_up(self, player):
-        if player.food > 99:
-            self.level = 2
-            
-            
-            player.channel.message = 'You upgraded this Inn to level 2 for 100 food.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.food -= 100
-            self.upgradable = False
-            self.max_health = 340
-            self.health = 340
-            
-        else:
-            player.channel.message = "You don't have enough food to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            if self.NPC:
-                if self.level == 1:
-                    channel.window = {'text':self.info,
-                                          '4th_info':('Hosting', self.NPC.type),
-                                          'health':(self.health, self.max_health),
-                                          'building':self,
-                                          'level':self.level,
-                                          'options':[(0, self.heal), (1, self.level_up), (2, self.kick_npc), (3, self.build_house), (4, self.Out)],
-                                          'simp':['Heal (5 food)', 'Upgrade (100 food)', 'Kick %s (free)' % (self.NPC.type), 'Build the %s a house (%s gold, %s food)' % (self.NPC.type, self.NPC.cost[0], self.NPC.cost[1]), 'Out']}
-                else:
-                    channel.window = {'text':self.info,
-                                          '4th_info':('Hosting', self.NPC.type),
-                                          'health':(self.health, self.max_health),
-                                          'building':self,
-                                          'level':self.level,
-                                          'options':[(0, self.heal), (1, self.kick_npc), (2, self.build_house), (3, self.Out)],
-                                          'simp':['Heal (5 food)', 'Kick %s (free)' % (self.NPC.type), 'Build the %s a house (%s gold, %s food)' % (self.NPC.type, self.NPC.cost[0], self.NPC.cost[1]), 'Out']}
-            else:
-                if self.level == 1:
-                    channel.window = {'text':self.info,
-                                      '4th_info':('Hosting', 'Nobody'),
-                                      'health':(self.health, self.max_health),
-                                      'building':self,
-                                      'level':self.level,
-                                      'options':[(0, self.heal), (1, self.level_up), (2, self.Out)],
-                                      'simp':['Heal (5 food)', 'Upgrade (100 food)', 'Out']}
-                else:
-                    channel.window = {'text':self.info,
-                                      '4th_info':('Hosting', 'Nobody'),
-                                      'health':(self.health, self.max_health),
-                                      'building':self,
-                                      'level':self.level,
-                                      'options':[(0, self.heal), (1, self.Out)],
-                                      'simp':['Heal (5 food)', 'Out']}
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              '4th_info':('Hosting', ('Nobody' if self.NPC is None else self.NPC.type)),
-                              'level':self.level,
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}
-
+    max_health = 240
+    NPC = None
+    upgrade_cost = [0, 100]
+    def init(self):
+        self.count = random.randint(INNSTART, INNEND)
+    def options(self, character):
+        options = [{'name': 'Upgrade',
+                    'action': self.upgrade,
+                    'food-cost': self.upgrade_cost[1]}]
+        if self.NPC:
+            options.extend([{'name': 'Kick ' + self.NPC.type,
+                                'action': self.kick_npc},
+                            {'name': 'Build the %s a house' % self.NPC.type,
+                                'action': self.build_house,
+                                'gold-cost': self.NPC.building_cost[0],
+                                'food-cost': self.NPC.building_cost[1]}])
+        return options
+    def get_4th_info(self, channel):
+        return 'Hosting', (self.NPC.type if self.NPC else 'Nobody')
+    def level_up(self, character):
+        self.health = self.max_health = 340
     def update(self):
         super().update()
-        if self.state != 'broken':
-            if self.NPC is not None:
-                self.NPC.update()
-            else:
-                if self.server.event.__class__.__name__ != 'BarbarianRaid':
-                    self.count -= 1
-                    if self.count == 0:
-                        self.NPC = get_innpc(self)
-                
-
-    def kick_npc(self, player):
-        if player.channel == self.owner:
-            name = self.NPC.type
-            self.NPC.depart()
-            player.channel.message = 'You have kicked the %s.' % name
-            player.channel.message_color = (128,0,128)
+        if self.state == 'broken' or 'Barbarian Raid' in [event.type for event in self.server.events]:
+            return
+        if self.NPC:
+            self.NPC.update()
         else:
-            player.channel.message = "This isn't your Inn!"
-            player.channel.message_count = 160
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
+            self.count -= 1
+            if self.count <= 0:
+                self.NPC = get_innpc(self)
+    def kick_npc(self, character):
+        character.channel.add_message('You have kicked the %s.' % self.NPC.type, color=(128,0,128))
+        self.NPC.depart()
+    def build_house(self, character):
+        buy_building(character.channel, self.NPC.create_building())
+        character.channel.add_message('You just built the %s a house for %s.' % (self.NPC.type, toolbox.format_cost(self.NPC.building_cost)))
+        self.NPC.depart()
 
-    def build_house(self, player):
-        if player == self.owner.character:
-            if player.food > self.NPC.cost[1]:
-                if player.gold > self.NPC.cost[0]:
-
-                    player.channel.text = 'Right click to place building'
-                    player.channel.build_to_place = self.NPC.building
-                    NPC = self.NPC
-                    self.NPC.depart()
-                    player.channel.message = 'You just bought the %s a house for %s gold and %s food.' % (NPC.type, NPC.cost[0], NPC.cost[1])
-                    player.channel.message_count = 150
-                    player.channel.message_color = (255,205,0)
-                    player.gold -= NPC.cost[0]
-                    player.food -= NPC.cost[1]
-                    player.spence = ('gold' if NPC.cost[0] >= NPC.cost[1] else 'food')
-                else:
-                    player.channel.message = "You don't have enough gold to buy this!"
-                    player.channel.message_count = 150
-                    player.channel.message_color = (255,0,0)
-                
-            else:
-                if player.gold > self.NPC.cost[0]:
-                    player.channel.message = "You don't have enough food to buy this!"
-                else:
-                    player.channel.message = "You can't afford this building!"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,0,0)
-        else:
-            player.channel.message = "This isn't your Inn!"
-            player.channel.message_count = 160
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        
-           
 class BarrelMaker(Building):
+    type = 'Barrel Maker'
+    info = 'This building lets you buy barrels!', 'Z to hide. Z+Click to toss.'
     dimensions = (670, 440)
-    def __init__(self, server, x, y, owner, rect):
-        Building.__init__(self, server, x, y, owner)
-        self.info = ('This building lets you buy barrels!! Z to hide. Z+Click to throw.', '(: (: (: (: (: (: (: (:')
-        self.type = 'Barrel Maker'
-        self.health = self.max_health = 250
-        
-        self.upgrade_cost = 100
-
-        self.post_init(rect)
-
-    def level_up(self, player):
-        if player.gold > self.upgrade_cost - 1:
-            self.level += 1
-            player.channel.message = 'You upgraded this Barrel Maker to level ' + str(self.level) + ' for ' + str(self.upgrade_cost) + ' gold.'
-            player.channel.message_count = 150
-            player.channel.message_color = (255,205,0)
-            player.gold -= self.upgrade_cost
-            self.upgrade_cost += 20
-            if self.level < 15:
-                self.health = self.max_health = self.max_health + 20
-            
-        else:
-            player.channel.message = "You don't have enough gold to upgrade this building!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-
-        
-        self.Out(player)
-
-    def buy_barrel(self, player):
-
-        if player.food > 16:
-            if player.barrel_health > 0:
-                player.channel.message = "You already have a barrel! Get rid of it before buying a new one."
-                player.channel.message_count = 150
-                player.channel.message_color = (0,0,255)
-
-            else:
-                player.channel.message = "You bought a barrel! (17 food)"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.food -= 17
-                player.barrel_health = player.barrel_max_health = 10 + (5 * self.level)
-                player.explosive = False
+    max_health = 250
+    upgrade_cost = [70, 0]
+    def options(self, character):
+        return [{'name': 'Upgrade',
+                    'action': self.upgrade,
+                    'gold-cost': self.upgrade_cost[0],
+                    'no': UPG},
+                {'name': 'Barrel',
+                    'action': self.buy_barrel,
+                    'food-cost': 17,
+                    'no': BUY},
+                {'name': 'Explosive Barrel',
+                    'action': self.buy_explosive_barrel,
+                    'gold-cost': 150,
+                    'no': 'buy this quality barrel!'}]
+    def get_4th_info(self, channel):
+        return 'Barrel Health', str(channel.character.barrel_health)
+    def level_up(self, character):
+        self.upgrade_cost[0] += 5
+        if self.level < 15:
+            self.health = self.max_health = self.max_health + 20
+    def buy_barrel(self, character):
+        character.channel.add_message('You bought a barrel for 17 food.')
+        character.barrel_health = character.barrel_max_health = 10 + (5 * self.level)
+        character.explosive = False  # Explosive barrel        
+    def buy_explosive_barrel(self, character):
+        character.channel.add_message('You bought an explosive barrel for 150 gold.')
+        character.barrel_health = character.barrel_max_health = 10 + (5 * self.level)
+        character.explosive = True  # Explosive barrel
 
 
-
-            
-        else:
-            player.channel.message = "You don't have enough food to buy a barrel!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-        
-    def buy_barrel_tnt(self, player):
-
-        if player.gold > 149:
-            if player.barrel_health > 0:
-                player.channel.message = "You already have a barrel! Get rid of it before buying a NEW one."
-                player.channel.message_count = 150
-                player.channel.message_color = (0,0,255)
-
-            else:
-                player.channel.message = "You bought an explosive barrel! (150 gold)"
-                player.channel.message_count = 150
-                player.channel.message_color = (255,205,0)
-                player.gold -= 150
-                player.barrel_health = player.barrel_max_health = 10 + (5 * self.level)
-                player.explosive = True
-
-
-
-            
-        else:
-            player.channel.message = "You don't have enough gold to buy this quality barrel!"
-            player.channel.message_count = 150
-            player.channel.message_color = (255,0,0)
-        self.Out(player)
-
-
-
-    def open_window(self, channel):
-        if self.state == 'alive':
-            channel.in_window = True
-            channel.window = {'text':self.info,
-                              '4th_info':('Barrel Health', str(channel.character.barrel_health)),
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              'options':[(0, self.level_up), (1, self.heal), (2, self.buy_barrel), (3, self.buy_barrel_tnt), (4, self.Out)],
-                              'simp':['Upgrade (%s gold)' % self.upgrade_cost, 'Heal (5 food)', 'Barrel (17 food)', 'Explosive Barrel (150 gold)', 'Out']}
-            
-        elif self.state == 'broken':
-            channel.in_window = True
-            channel.window = {'text':('This building is broken.', ''),
-                              'upgradable':False,
-                              'health':(self.health, self.max_health),
-                              'building':self,
-                              'level':self.level,
-                              '4th_info':('Barrel Health', str(channel.character.barrel_health)),
-                              'options':[(0, self.clear), (1, self.Out)],
-                              'simp':['Clear (2 gold)', 'Out']}            
-
-
+def test_build(character):  # Returns a building's rect if the building fits
+    building = character.channel.build_to_place
+    width, height = building.dimensions
+    if building.type != 'Archery Tower':
+        if character.has_builder: width *= 0.8; height *= 0.8
+        y_distance = 240
+    else:
+        y_distance = 390
+    rect = pygame.Rect(0, 0, width, height)
+    rect.midtop = (character.x, character.y - y_distance)
+    map_rect = pygame.Rect(0, 0, 6000, 3500)
+    if not map_rect.colliderect(rect) or character.server.obstacles.collide(character, rect) or character.server.zones.collide(character, rect):
+        return False
+    return True
                 
             
 __ALL__ = ['CentralBuilding', 'PortableCentralBuilding', 'FitnessCenter', 'Balloonist', 'Gym', 'RunningTrack', 'HealthCenter', 'BarrelMaker', 'ConstructionSite', 'RobotFactory', 'Restaurant', 'MinersGuild', 'FarmersGuild', 'Inn']

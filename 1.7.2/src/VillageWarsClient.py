@@ -726,14 +726,12 @@ def main():
             stop_loading_circle = True
     
     newUserInfo = loggedIn(screen, clock, 5555, username, userInfo)
-    if not username.startswith('Guest'):
+    if not username.startswith('Player'):
         res = requests.post(remote_application + 'updateUser', data={'username':username, 'color':json.dumps(newUserInfo['color']), 'skin':str(newUserInfo['skin'])})
         res.raise_for_status()
 
-    log.setLevel(logging.INFO)  # Get rid of debug  # Get rid of debug
+    log.setLevel(logging.INFO)  # Get rid of debug
     joinGame(screen, clock, newUserInfo['ip'], 5555, username, newUserInfo)
-
-
 
 
 if __name__ == '__main__':
