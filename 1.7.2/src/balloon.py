@@ -26,18 +26,7 @@ class ArcheryBalloon(Balloon):
 
 class Bolt(elements.Balloon):
     def __init__(self, owner, **kwargs):
-        if owner.type == 'Character':
-            kwargs['msg'] = '<Attacker> shot <Victim> with a barbarian crossbow.'
-        else:
-            kwargs['msg'] = '<Attacker> shot <Victim> and stole their gold and food.'
         elements.Balloon.__init__(self, owner, **kwargs)
         self.image_id = 4
     def pop(self):
         self.kill()
-
-
-class TraitorBalloon(Balloon):  # Not used in vanilla
-    def update(self, *args, **kwargs):
-        super().update(*args, **kwargs)
-        if self.shooter and not self.rect.colliderect(self.shooter.rect):
-            self.shooter = elements.Dummy

@@ -4,7 +4,7 @@ import toolbox
 from balloon import ArcheryBalloon
 from animations import *
 
-from elements import Sprite, Obstacle, SCREEN, Dummy
+from elements import Sprite, Obstacle, SCREEN, Dummy, playsound
 
 class Collector(Sprite):
     type = 'Collector'
@@ -80,10 +80,10 @@ class Collector(Sprite):
         x, y = toolbox.getDir(self.angle, self.speed)
         x_start, y_start = self.x, self.y
         self.x += x
-        if self.server.obstacles.collide(self, self.rect, ignore=['Gate']):
+        if self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'], ignore=['Spiky bush']):
             self.x -= x
         self.y += y
-        if self.server.obstacles.collide(self, self.rect, ignore=['Gate']):
+        if self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'], ignore=['Spiky bush']):
             self.y -= y
         if round(x_start) == round(self.x) and round(y_start) == round(self.y):  # Move even though the obstacle is blocking
             self.x += x
@@ -124,10 +124,10 @@ class Collector(Sprite):
     def getHurt(self, damage, angle=None, knockback=None, **kwargs):
         x, y = toolbox.getDir(angle, knockback)
         self.x += x
-        if self.server.obstacles.collide(self, self.rect, ignore=['Gate']):
+        if self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate']):
             self.x -= x
         self.y += y
-        if self.server.obstacles.collide(self, self.rect, ignore=['Gate']):
+        if self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate']):
             self.y -= y
 
 
@@ -136,15 +136,16 @@ class ArcheryTower(Obstacle):
     dimensions = (360, 360)
     max_health = 300
     shot_speed = 60
+    balloon_damage = 24
+    balloon_speed = 45
+    knockback = 32
+    building = None
     def __init__(self, character):
         Obstacle.__init__(self, character.server, character.x, character.y - 240)
         self.character = character
         self.shoot_cooldown = self.shot_speed
         self.state = 'alive'
         self.attacking = False
-        self.balloon_speed = 45
-        self.balloon_damage = 24
-        self.knockback = 32
         self.name = self.type
     @property
     def channel(self):
@@ -184,7 +185,8 @@ class ArcheryTower(Obstacle):
         self.health -= damage
         if self.health <= 0:
             self.state = 'broken'
-            self.channel.add_message(kwargs.get('name', getattr(kwargs.get('attacker'), 'type'), 'Anonymous') + ' has broken one of your ' + self.type + 's.', color=(255,0,0))
+            attacker = kwargs.get('name', getattr(kwargs.get('attacker'), 'type', 'Anonymous'))
+            self.channel.add_message(f'{attacker} has broken one of your Archery Towers.')
             self.zone_rect = self.obstacle_rect
             self.remove(self.server.obstacles)
             self.add(self.server.zones)
@@ -199,7 +201,7 @@ class Robot(Sprite):
     max_health = 100
     dimensions = (50, 50)
     def __init__(self, building):
-        Sprite.__init__(self, *self.groups)
+        Sprite.__init__(self, self.groups)
         self.building = building
         self.server = building.server
         self.character = building.character
@@ -225,7 +227,7 @@ class Robot(Sprite):
     def rect(self):
         rect = pygame.Rect(0, 0, *self.dimensions); rect.center= self.x, self.y; return rect
     def update(self):
-        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Gate'])
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'], ignore=['Spiky bush'])
         if obstacle:
             if obstacle.type == 'Crate':
                 x, y = toolbox.getDir(self.angle + 180, 40)
@@ -237,6 +239,8 @@ class Robot(Sprite):
             self.hurt -= 1
         if self.dead:
             self.dead -= 1
+            if not self.dead:
+                self.add(self.server.dynamics)  # Sprite.add()
         if not self.dead:
             self.AI()
             for p in self.server.users:
@@ -264,11 +268,11 @@ class Robot(Sprite):
             self.angle = toolbox.getAngle(self.x, self.y, self.building.keeper_rect.centerx, self.building.keeper_rect.centery)
         x, y = toolbox.getDir(self.angle, speed)
         self.x += x
-        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Gate'])
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'], ignore=['Spiky bush'])
         if obstacle:
             self.x -= x
         self.y += y
-        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Gate'])
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'], ignore=['Spiky bush'])
         if obstacle:
             self.y -= y
         suspect = None
@@ -292,7 +296,11 @@ class Robot(Sprite):
         else:
             self.state = 'Peaceful'
 
-    def init(self):
+    def die(self):
+        Explosion(self)
+        self.remove(self.server.dynamics)  # Sprite.remove
+        self.dead = 200
+        playsound(self, 'die', self.rect)
         self.x, self.y = self.building.keeper_rect.center
         self.health = self.max_health
         self.state = 'Peaceful'
@@ -303,24 +311,17 @@ class Robot(Sprite):
             damage = 0
         self.health -= damage
         if self.health <= 0:
-            Explosion(self)
-            self.dead = 200
-            for p in self.server.users:
-                screen = pygame.Rect(0, 0, 1000, 650)
-                screen.center = p.character.rect.center
-                if screen.colliderect(self.rect):
-                    p.to_send.append({'action':'sound', 'sound':'die'})
-            self.init()
+            return self.die()
         elif damage != 0:
             self.hurt = 8
         if self.state == 'Peaceful':
             self.angle = kwargs.get('angle', self.angle)
         x, y = toolbox.getDir(kwargs.get('angle', 0), kwargs.get('knockback', 0))
         self.x += x
-        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Gate'])
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'])
         if obstacle:
             self.x -= x
         self.y += y
-        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Gate'])
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore_friend=['Gate'])
         if obstacle:
             self.y -= y

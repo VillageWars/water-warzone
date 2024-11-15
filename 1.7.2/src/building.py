@@ -115,19 +115,16 @@ class RunningTrack(Building):
     upgrade_cost = [0, 90]
     def init(self):
         self.character.speed += 3
-        self.character.moving += 3
     def options(self, character):  # Building.condition() removes unavailable options automatically
         return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
     def get_4th_info(self, channel):
         return 'Speed', str(channel.character.speed)
     def level_up(self, character):
         self.character.speed += 3
-        self.character.moving += 3
         self.upgrade_cost[1] += 30
         self.health = self.max_health = self.max_health + 40
     def die(self):
         self.character.speed = 8
-        self.character.moving = 8
                 
 class Gym(Building):
     type = 'Gym'
@@ -136,17 +133,17 @@ class Gym(Building):
     max_health = 180
     upgrade_cost = [0, 90]
     def init(self):
-        self.character.strength += 2
+        self.character.resistance += 2
     def options(self, character):  # Building.condition() removes unavailable options automatically
         return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
     def get_4th_info(self, channel):
-        return 'Resistance', str(channel.character.strength)
+        return 'Resistance', str(channel.character.resistance)
     def level_up(self, character):
-        self.character.strength += 2
+        self.character.resistance += 2
         self.upgrade_cost[1] += 30
         self.health = self.max_health = self.max_health + 40
     def die(self):
-        self.character.strength = 0
+        self.character.resistance = 0
                 
 class HealthCenter(Building):
     type = 'Health Center'
@@ -309,12 +306,12 @@ class Restaurant(Building):
     def get_4th_info(self, channel):
         return 'Need takeout', ('No' if channel.character.meal else 'Yes')
     def buy_takeout(self, character):
-        character.meal = True
-        character.meal_type = r.randrange(DISHES)
         character.channel.add_message('You bought a meal for 12 food.')
+        character.meal = True
+        character.meal_type = random.randrange(DISHES)
     def order_meal(self, character):
         character.channel.add_message('You ate a meal for 6 food.')
-        character.dine_in()
+        character.health = character.max_health
 
 class RobotFactory(Building):
     type = 'Robot Factory'
@@ -335,7 +332,7 @@ class RobotFactory(Building):
         self.num_bots += 1
         Robot(self)
     def die(self):
-        return [npc.kill() for npc in self.server.NPCs if (type(npc).__name__ == 'Robot' and npc.factory == self)] # Kill robots
+        return [npc.kill() for npc in self.server.NPCs if (type(npc).__name__ == 'Robot' and npc.building == self)] # Kill robots
 
 class Inn(Building):
     type = 'Inn'
@@ -408,11 +405,11 @@ class BarrelMaker(Building):
     def buy_barrel(self, character):
         character.channel.add_message('You bought a barrel for 17 food.')
         character.barrel_health = character.barrel_max_health = 10 + (5 * self.level)
-        character.explosive = False  # Explosive barrel        
+        character.has_explosive_barrel = False  # Not explosive barrel        
     def buy_explosive_barrel(self, character):
         character.channel.add_message('You bought an explosive barrel for 150 gold.')
         character.barrel_health = character.barrel_max_health = 10 + (5 * self.level)
-        character.explosive = True  # Explosive barrel
+        character.has_explosive_barrel = True  # Explosive barrel
 
 
 def test_build(character):  # Returns a building's rect if the building fits

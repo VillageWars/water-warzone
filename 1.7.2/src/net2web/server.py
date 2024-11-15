@@ -7,6 +7,7 @@ import signal
 import threading
 import secrets
 import time
+import copy
 
 import logging as log
 
@@ -14,7 +15,7 @@ from .toolbox import Clock
 
 
 class BaseChannel:
-    def __init__(self, host=None, port=None):
+    def __init__(self):
         self.websocket = None
         self.messages = []
         self.to_send = []
@@ -24,25 +25,24 @@ class BaseChannel:
     async def send(self, data):
         """
         Send a message.
-
         """
         await self.websocket.send(json.dumps(data))
 
     async def send_messages(self):
         while True:
             try:
-                messages_to_send = self.to_send[:]
+                messages_to_send = copy.copy(self.to_send)
+                self.to_send.clear()
                 if len(messages_to_send) == 0:
                     await asyncio.sleep(self.clock.get_tick())
                     continue
-                self.to_send = []
-                compilation = {'messages':[]}
+                data = {'messages':[]}
                 for message in messages_to_send:
-                    compilation['messages'].append(message)
-                await self.send(compilation)
+                    data['messages'].append(message)
+                await self.send(data)
                 
-                if len(compilation['messages']) > 0:
-                    log.debug('Sent %s messages' % len(compilation))
+                if len(data['messages']) > 0:
+                    log.debug('Sent %s messages' % len(data))
             except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
                     break
         
@@ -50,7 +50,6 @@ class BaseChannel:
         while True:
             try:
                 message = await self.websocket.recv()
-            
                 messages = json.loads(message)
                 for event in messages['messages']:
                     self.messages.append(event)
@@ -70,29 +69,6 @@ class BaseChannel:
         # Wait for tasks to complete
         await asyncio.gather(task1, task2)
 
-    
-        
-    def error(self, message):
-        """
-        Send an error message.
-        """
-        event = {
-            "action": "error",
-            "message": message,
-        }
-        self.to_send.append(json.dumps(event))
-        
-    async def response(self, message):
-        """
-        Send an error message.
-
-        """
-        event = {
-            "action": "confirm",
-            "message": message,
-        }
-        await self.websocket.send(json.dumps(event))
-
 class Channel:
     def __init__(self, server):
         self.server = server
@@ -106,7 +82,7 @@ class Channel:
         
     def pump(self):
         num = 0  # There's a small chance we will receive a new message during the pump
-        while len(self.async_server.messages):
+        while self.async_server.messages:
             message = self.async_server.messages.pop(0)
             num += 1
             if message['action'] == 'connection':
@@ -130,7 +106,7 @@ class Channel:
 
     def send(self, data, force=False):
         if self.connected or force:
-            self.async_server.to_send.append(data)
+            self.async_server.to_send.append(copy.deepcopy(data))
         else:
             log.debug('Not yet connected, failed to send action "' + data['action'] + '"')
 
@@ -146,20 +122,13 @@ class Channel:
         pass
 
     def __hash__(self):
-        return hash(self.async_client.id)
+        return hash(self.async_server.id)
 
 class BaseServer:
-    def __init__(self, server, host=None, port=None):
+    def __init__(self, server, port=None):
         self.server = server
-        if host:
-            self.host = host
-        else:
-            self.host = 'water-warzone-0fc31e47a670.herokuapp.com',
-        if port:
-            self.port = port
-        else:
-            self.port = os.environ.get("PORT", "5555")
         self.channels = []
+        self.port = port
 
     def start(self):
         asyncio.run(self.main())
@@ -186,18 +155,12 @@ class BaseServer:
             self.channels.append(new_channel)
             await new_channel.async_server.handler(websocket)
         except websockets.exceptions.InvalidHandshake as e:
-            error_message = "Failed to open a WebSocket connection: invalid Connection header: close."
-            # Customize the error message or perform any other desired actions
-            # ...
-            # Send the error message back to the client if needed
+            error_message = f'Failed to open a WebSocket connection: {e}'
             await websocket.send(error_message)
 
-
-    
-
 class Server():
-    def __init__(self, host=None, port=None):
-        self.async_server = BaseServer(self, host=host, port=port)
+    def __init__(self, port=5555):
+        self.async_server = BaseServer(self, port=port)
         self.async_server.thread = threading.Thread(target=self.async_server.start)
         self.async_server.thread.setDaemon(True)
         self.async_server.thread.start()
@@ -209,7 +172,6 @@ class Server():
         return self.async_server.channels
 
     def pump(self):
-        
         for player in self.players:
             player.pump()
             

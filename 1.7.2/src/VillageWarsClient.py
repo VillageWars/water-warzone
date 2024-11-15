@@ -21,12 +21,11 @@ log.debug('Loading configuration')
 import configuration as conf  # Personal Module
 PATH = conf.PATH
 py = conf.PY
-conf.init()
+conf.init_assets()
 
 # Third-Party Imports
 
 log.debug('Importing Third-Party modules')
-import requests
 from progress_bar import InitBar as Bar
 import pygame
 import pygame as p
@@ -118,21 +117,10 @@ def loading_circle(screen, clock):
 def logIn(screen, clock, logInType, username, password, name='', email='None'):
     base_screen = screen.__copy__()
     global response_data
-    def CheckValidUser(username, password):
-        global response_data
-        res = requests.get(remote_application + 'get_user/%s/%s' % (username, password))
-        res.raise_for_status()
-        response_data = res.json()
-    def CreateAccount(username, password, name, email):
-        global response_data
-        res = requests.post(remote_application + 'create', data={'username':username, 'password':password, 'name':name, 'email':str(email)})
-        res.raise_for_status()
-        response_data = res.json()
-
-    if logInType == 'sign in':
-        CheckValidUser(username, password)
-    elif logInType == 'sign up':
-        CreateAccount(username, password, name, email)
+    if logInType == 'login':
+        response_data = conf.ctx.get_user(username=username, password=password)
+    elif logInType == 'create_account':
+        response_data = conf.ctx.create_account(username=username, password=password, name=name, email=str(email))
     return response_data
 
 
@@ -175,30 +163,14 @@ def get_nametag_color(color, username):
     return small, big
     
 
-def search_servers(screen, choose):    
-    if conf.INTERNET:
-    
-        res = requests.post(remote_application + 'scan_for_servers')
-        res.raise_for_status()
-        
-        servers = res.json()['IPs']
-        
-        
-        global server_buttons
-        server_buttons = server_surfs(servers, screen, choose)
-    else:
-        if conf.refresh():
-            return search_servers(screen, choose)
-        servers = []
-        server_buttons = server_surfs(servers, screen, choose)
-    global FOUND_SERVERS
+def search_servers(screen, choose):
+    global server_buttons, FOUND_SERVERS
+    servers = conf.ctx.scan_for_servers()
+    server_buttons = server_surfs(servers, screen, choose)
     FOUND_SERVERS = True
-    
-
 
 def server_surfs(IPs, screen, choose_server_rect):
     server_buttons = []
-
     gray_rectangle = p.Surface((800, 60))
     gray_rectangle.fill((180,180,180))
     gray_rectangle2 = p.Surface((800, 60))
@@ -213,7 +185,7 @@ def server_surfs(IPs, screen, choose_server_rect):
         name = server['name']
         
 
-        ip = server['ip']
+        ip = server['IP']
         if ip.upper() == ip.lower():  # If the IP is numerical
             ip_surf = font_server.render(ip, True, (0,0,90))
             ip_surf2 = font_server.render(ip, True, (50,50,50))
@@ -660,12 +632,7 @@ def loggedIn(screen, clock, port, username, userInfo):
 
 def joinGame(screen, clock, ip, port, username, newUserInfo):
     global music_playing
-    music_playing = GameClient.main(screen, clock, username, __version__, newUserInfo, ip, port=port, musicPlaying=music_playing)
-    if music_playing:
-        p.mixer.music.load('../assets/sfx/menu.wav')
-        p.mixer.music.play(-1, 0.0)
     
-
 
 def download_version_info(timeout=2):
     global active
@@ -675,23 +642,16 @@ def download_version_info(timeout=2):
             active = version_data['active']
     except:
         active = '0.0.1'
-    if conf.INTERNET:
+    if conf.ctx.internet_connection:
         log.debug('Downloading version information')
-        res = requests.get('http://villagewars.pythonanywhere.com/need_version_info/' + active)
-        res.raise_for_status()
-        if res.json()['need']:
+        if conf.ctx.need_version_info(active):
             bar = Bar('Updating Launcher')
             bar(0)
-            res = requests.get('http://villagewars.pythonanywhere.com/download_version_info', stream=True)
-            res.raise_for_status()
-            try:
-                download_size = int(res.headers['Content-length'])
-            except KeyError:
-                download_size = 2048
+            download_size, iter_content = conf.ctx.stream_version_info()
             downloaded_bytes = 0
             os.makedirs('../../version screenshots', exist_ok=True)
             fo = open('../../version screenshots/version_info.json', 'wb')
-            for chunk in res.iter_content(chunk_size=32):
+            for chunk in iter_content(chunk_size=32):
                 if chunk: # filter out keep-alive new chunks
                     len_chunk = len(chunk)
                     fo.write(chunk)
@@ -712,29 +672,27 @@ def main():
         stop_loading_circle = False
         circle = threading.Thread(target=loading_circle, args=[screen, clock])
         circle.start()
-        if not conf.INTERNET:
-            username = 'Player' + str(ran.randint(1,999)).rjust(3, '0')
+        if not conf.ctx.internet_connection:
             userInfo = {'valid':True,'username':username,'color':(255,0,0),'skin':0,'coins':0,'xp':0}
-            alert('We were unable to sign you in. Play local!\n Name: ' + username)
+            alert('We were unable to establish an Internet connection and verify your password. Play locally!')
         elif result['create']:
             name, email = result['name'], result['email']
-            userInfo = logIn(screen, clock, 'sign up', username, password, name, email=email)
+            userInfo = logIn(screen, clock, 'create_account', username, password, name, email=email)
         else:
-            userInfo = logIn(screen, clock, 'sign in', username, password)
+            userInfo = logIn(screen, clock, 'login', username, password)
         if not userInfo['valid']:
             alert(userInfo['message'], title='VillageWars')
             stop_loading_circle = True
     
     newUserInfo = loggedIn(screen, clock, 5555, username, userInfo)
     if not username.startswith('Player'):
-        res = requests.post(remote_application + 'updateUser', data={'username':username, 'color':json.dumps(newUserInfo['color']), 'skin':str(newUserInfo['skin'])})
-        res.raise_for_status()
+        conf.ctx.update_user(username=username, color=newUserInfo['color'], skin=str(newUserInfo['skin']))
 
     log.setLevel(logging.INFO)  # Get rid of debug
-    joinGame(screen, clock, newUserInfo['ip'], 5555, username, newUserInfo)
+
+    GameClient.main(screen, username, newUserInfo, newUserInfo['ip'], port=5555, musicPlaying=True)
 
 
 if __name__ == '__main__':
-    download_version_info()
-    remote_application = 'https://villagewars.pythonanywhere.com/'
+    download_version_info()  # Only downloads if needed
     main()

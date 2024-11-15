@@ -15,15 +15,8 @@ from .toolbox import Clock
 
 
 class BaseClient:
-    def __init__(self, host=None, port=None):
-        if host:
-            self.host = host
-        else:
-            self.host = 'water-warzone-0fc31e47a670.herokuapp.com',
-        if port:
-            self.port = port
-        else:
-            self.port = 5555
+    def __init__(self, uri=None):
+        self.uri = uri or 'ws://127.0.0.1:5000'
         self.websocket = None
         self.messages = []
         self.to_send = []
@@ -64,28 +57,17 @@ class BaseClient:
     async def recv(self):
         while True:
             try:
-                
                 message = await self.websocket.recv()
-                messages = json.loads(message)
-                for event in messages['messages']:
-                    self.messages.append(event)
+                self.messages.extend(json.loads(message)['messages'])
             except (websockets.exceptions.ConnectionClosedError, websockets.ConnectionClosedOK):
-                    log.error('Connection Closed from server-side')
-                    self.messages.append({'action':'disconnected'})
-                    break
+                log.error('Connection Closed from server-side')
+                self.messages.append({'action':'disconnected'})
+                break
 
     async def main(self):
-        try:
-            ip = socket.gethostbyname(self.host)
-            if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.') or ip.startswith('127.0.0.1'):
-                URI = 'ws://' + self.host + ':' + str(self.port) + '/'
-            else:
-                URI = 'wss://' + self.host + '/'
-        except socket.error:
-            URI = 'ws://' + self.host + '/'
-        
-        log.info('Connecting to ' + URI + '...')
-        async with websockets.connect(URI) as websocket:
+        print('URI:', self.uri)
+        log.info('Connecting to ' + self.uri + '...')
+        async with websockets.connect(self.uri) as websocket:
             self.websocket = websocket
             self.to_send.append({'action':'connection'})
             log.debug('Sending initial message')
@@ -95,32 +77,10 @@ class BaseClient:
             # Wait for tasks to complete
             await asyncio.gather(task1, task2)
 
-        
-    async def error(self, message):
-        """
-        Send an error message.
-
-        """
-        event = {
-            "action": "error",
-            "message": message,
-        }
-        self.to_send.append(json.dumps(event))
-        
-    async def response(self, message):
-        """
-        Send an error message.
-
-        """
-        event = {
-            "action": "confirm",
-            "message": message,
-        }
-        self.to_send.append(json.dumps(event))
 
 class Client:
-    def __init__(self, host=None, port=None):
-        self.async_client = BaseClient(host=host, port=port)
+    def __init__(self, uri=None):
+        self.async_client = BaseClient(uri=uri)
         self.async_client.thread = threading.Thread(target=self.async_client.start)
         self.async_client.thread.setDaemon(True)
         self.async_client.thread.start()
@@ -143,7 +103,7 @@ class Client:
                 sys.exit()
             if hasattr(self, 'Network_' + message['action']):
                 getattr(self, 'Network_' + message['action'])(message)  # Calls the Network function to handle an action. `message` will hold the data.
-                log.debug('Calling Network_' + message['action'])
+                log.debug(f'Calling Network_{message["action"]}({repr(message)})')
             else:
                 log.warning('No Network_' + message['action'] + ' found.')
         if num > 0:
@@ -162,7 +122,6 @@ class Client:
             
     Send = send  # Compatible with PodSixNet
         
-
     def Network_error(self, data):
         log.error('Error:', data['message'])
         

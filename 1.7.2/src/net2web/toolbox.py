@@ -24,16 +24,11 @@ class Clock:
         return 0
         
         
-def getmyip(local=True):
+def getmyip():
     """
     Finds the IP address of the local computer
     """
-    if local:
+    try:
         return socket.gethostbyname(socket.gethostname())
-
-    else:
-        url = 'https://api.ipify.org?format=json'
-        res = requests.get(url)
-        res.raise_for_status()
-        data = res.json()
-        return data['ip']
+    except:
+        return '127.0.0.1'

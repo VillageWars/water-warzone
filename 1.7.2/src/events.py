@@ -149,7 +149,7 @@ class Barbarian(Sprite):
             self.shield_count -= 1
         if self.shoot_cooldown:
             self.shoot_cooldown -= 1
-        obstacle = self.server.obstacles.collide(self, self.rect)
+        obstacle = self.server.obstacles.collide(self, self.rect, ignore=['Spiky bush'])
         if obstacle:
             if obstacle.type == 'Crate' or self.type == 'Barbarian Leader':  # The leader gets pushed back instead of teleported
                 x, y = toolbox.getDir(self.angle + 180, 40)
@@ -186,20 +186,22 @@ class Barbarian(Sprite):
         max_id_barbarian = max(collisions, key=lambda b: b.id)
         if self == max_id_barbarian:
             self.move()
-    def move(self):
-        x, y = toolbox.getDir(self.angle, self.speed)
-        self.move_x(x)
-        self.move_y(y)
-    def move_x(self, amount):
-        self.x += amount
+    def move_on_axis(self, axis, amount, **kwargs):
+        if amount == 0: return
+        original_value = getattr(self, axis)
+        setattr(self, axis, original_value + amount)
         obstacle = self.server.obstacles.collide(self, self.rect)
         if obstacle:
-            self.x -= amount
-    def move_y(self, amount):
-        self.y += amount
-        obstacle = self.server.obstacles.collide(self, self.rect)
-        if obstacle:
-            self.y -= amount
+            if obstacle.type == 'Spiky bush' and not kwargs.get('hurt') and not self.type == 'Barbarian Leader':
+                self.getHurt(1 + self.resistance, name='a spiky bush', angle=self.angle + 180, msg='<Victim> fell in <Attacker>.')
+            else:
+                setattr(self, axis, original_value)
+    def move(self, **kwargs):
+        x, y = toolbox.getDir(kwargs.get('angle', self.angle), kwargs.get('speed', self.speed))
+        self.x, self.y = round(self.x), round(self.y)
+        self.move_on_axis('x', round(x), **kwargs)
+        self.move_on_axis('y', round(y), **kwargs)
+
     def shield_use(self):
         return random.randint(0, 2) == 0
     def getHurt(self, damage, attacker=Dummy, angle=0, knockback=0, **kwargs):
@@ -222,9 +224,7 @@ class Barbarian(Sprite):
                 if hasattr(attacker, 'gold'):
                     attacker.gold += self.gold
                     attacker.food += self.food
-            x, y = toolbox.getDir(angle, knockback)
-            self.move_x(x)
-            self.move_y(y)
+            self.move(angle=angle, speed=knockback, hurt=True)
     def kill(self):
         Sprite.kill(self)
     def __repr__(self):
@@ -268,7 +268,7 @@ class BarbarianArcher(Barbarian):
     def shoot(self):
         if not self.shoot_cooldown:
             self.shoot_cooldown = self.shot_speed
-            Bolt(self)
+            Bolt(self, msg='<Attacker> shot <Victim> and stole their gold and food.')
 
 class BarbarianSwordsman(Barbarian):
     type = 'Barbarian Swordsman'

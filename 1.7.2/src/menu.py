@@ -132,12 +132,10 @@ def download_active_version(active):
     global FINISHED, download_size, downloaded_bytes
     FINISHED = False
     print('Sent files request')
-    res = requests.get('http://villagewars.pythonanywhere.com/download_active_version', stream=True)
-    res.raise_for_status()
-    download_size = int(res.headers['Content-length'])
+    download_size, iter_content = conf.ctx.stream_version_download()
     downloaded_bytes = 0
     fo = open('../run/downloads/new_version.zip', 'wb')
-    for chunk in res.iter_content(chunk_size=2048):
+    for chunk in iter_content(chunk_size=2048):
         if chunk: # filter out keep-alive new chunks
             len_chunk = len(chunk)
             fo.write(chunk)
@@ -550,7 +548,7 @@ def runMenu(screen, clock):
                 creds.append(Credit('Application: Pythonanywhere.com', creds, font=font40, y=50, rjust=True))
                 creds.append(Credit('Website: villagewars.pythonanywhere.com', creds, font=font40, y=80, rjust=True))
 
-                creds.append(Credit('Co-designers (Idea givers):', creds, font=font40, y=80))
+                creds.append(Credit('Idea givers:', creds, font=font40, y=80))
 
                 creds.append(Credit('Caden McCormick, Lucas McComick, David McCormick,', creds, font=font40, y=50, rjust=True))
                 creds.append(Credit('Angela McCormick, Charlie Garland, Owen Garland,', creds, font=font40, y=50, rjust=True))
@@ -561,46 +559,27 @@ def runMenu(screen, clock):
                 creds.append(Credit('at aamcc@cluemail.com giving me ideas! Your idea won\'t', creds, font=font30, y=30, color=(255,100,255)))
                 creds.append(Credit('necessarily be added, but your name will be added here!', creds, font=font30, y=80, color=(255,100,255)))
 
-                #fo = shelve.open('database/data')
-                #users = dict(fo)
-                #fo.close()
-                print(1)
-                if __main__.INTERNET:
-                    print(2)
-                    try:
-                        res = requests.get(__main__.flask_application + 'all_users')
-                        res.raise_for_status()
-                        print(3)
-                    except:
-                        __main__.INTERNET = False
-                else:
+                if not conf.ctx.internet_connection:
                     alert('You need to be connected\nto the Internet.', title='VillageWars')
                     tab = 'Home'
-                if __main__.INTERNET:
-                    print(4)
-                    users = res.text[4:]
-                    users = eval(users)
-                        
-                    creds.append(Credit('First %s Accounts:' % len(users), creds, font=font40, y=80))
-                        
-                    for i, user in enumerate(list(users)):
-                        if i+1 == len(users):
-                            creds.append(Credit('%s) %s (%s)' % (i+1, user, users[user].get('name', 'No Name')), creds, font=font40, y=60, rjust=False))
-                        else:
-                            name = users[user].get('name', 'No Name')
-                            if user in ('f', 'ModestNoob', 'ff'):
-                                name = 'Aaron McCormick, test account'
-                            if user == 'ProHacker':
-                                name = 'Aaron McCormick, fake games account'
-                            if user == 'Warpedillager':
-                                name = 'Aaron McCormick, stunts account'
-                            creds.append(Credit('%s) %s (%s)' % (i+1, user, name), creds, font=font40, y=50, rjust=False))
-                        
-                        
+                    continue
+                users = conf.ctx.all_users()
+                creds.append(Credit('First %s Accounts:' % len(users), creds, font=font40, y=80))
+                for i, user in enumerate(list(users)):
+                    if i + 1 == len(users):
+                        creds.append(Credit('%s) %s (%s)' % (i+1, user, users[user].get('name', 'No Name')), creds, font=font40, y=60, rjust=False))
+                    else:
+                        name = users[user].get('name', 'No Name')
+                        if user in ('f', 'ModestNoob', 'ff'):
+                            name = 'Aaron McCormick, test account'
+                        if user == 'ProHacker':
+                            name = 'Aaron McCormick, fake games account'
+                        if user == 'Warpedillager':
+                            name = 'Aaron McCormick, stunts account'
+                        creds.append(Credit('%s) %s (%s)' % (i+1, user, name), creds, font=font40, y=50, rjust=False))
 
-                    creds.append(Credit('...and new accounts are created every month!', creds, font=font40, y=200, rjust=True, color=(128,128,255)))                               
-
-                    creds.append(Credit('Thank you everyone!', creds, font=font100, y=0, color=(255,255,5)))
+                creds.append(Credit('...and new accounts are created every month!', creds, font=font40, y=200, rjust=True, color=(128,128,255)))
+                creds.append(Credit('Thank you everyone!', creds, font=font100, y=0, color=(255,255,5)))
                         
             for credit in creds: 
                 credit.update(screen, keys=keys)

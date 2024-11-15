@@ -12,6 +12,12 @@ import logging as log
 import pygame as p
 import requests
 
+# Personal Module Imports
+
+try:
+    import remote_app_manager
+except:
+    import src.remote_app_manager as remote_app_manager
 
 def file_size(path='.'):
     try:
@@ -50,12 +56,6 @@ def check_internet(timeout=5):
     except:
         return False
 
-def refresh():
-    global INTERNET
-    log.debug('Refreshed; Testing Internet connection')
-    INTERNET = check_internet()
-    return INTERNET
-
 if not p.get_init():
     p.init()
 
@@ -73,6 +73,8 @@ VERSION = os.path.basename(PATH[:-1])
 sys.path.append(PATH + 'src')
 os.chdir(src_dir)
 
+ctx = remote_app_manager.Context()
+
 with open(PATH + 'conf/preferences.json', 'r') as fo:
     preferences = json.loads(fo.read())
     PY = preferences.get('py', 'py')
@@ -80,32 +82,27 @@ with open(PATH + 'conf/preferences.json', 'r') as fo:
     sys.path.extend(lib)
     MAP_TEXTURE = preferences.get('map', 'grass')
 
-def init(load_assets=True):
-    global assets, images, audio, INTERNET
-    log.debug('Testing Internet connection')
-    INTERNET = check_internet()
-    if not INTERNET:
-        log.warning('No Internet connection')
-    if load_assets:
-        log.debug('Loading assets')
-        assets = {}
-        for root, dirs, files in os.walk(assets_dir):
-            if root == assets_dir:
-                for file in files:
-                    assets[file] = resolve(root + '\\' + file)
-            else:
-                for file in files:
-                    assets[root[len(assets_dir)+1:] + '/' + file] = resolve(root + '\\' + file)
+def init_assets():
+    global assets, images, audio
+    log.debug('Loading assets')
+    assets = {}
+    for root, dirs, files in os.walk(assets_dir):
+        if root == assets_dir:
+            for file in files:
+                assets[file] = resolve(root + '\\' + file)
+        else:
+            for file in files:
+                assets[root[len(assets_dir)+1:] + '/' + file] = resolve(root + '\\' + file)
 
-        images = {}
-        for asset in assets:
-            if assets[asset]['type'] == 'image':
-                images[asset] = assets[asset]['contents']
+    images = {}
+    for asset in assets:
+        if assets[asset]['type'] == 'image':
+            images[asset] = assets[asset]['contents']
 
-        audio = {}
-        for asset in assets:
-            if assets[asset]['type'] == 'audio':
-                audio[asset.replace('sfx/', '')] = assets[asset]['contents']
+    audio = {}
+    for asset in assets:
+        if assets[asset]['type'] == 'audio':
+            audio[asset.replace('sfx/', '')] = assets[asset]['contents']
 
 if __name__ == '__main__':  # Only for testing
     init()

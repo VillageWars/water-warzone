@@ -4,6 +4,7 @@ import sys
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(levelname)s - %(message)s')
 log = logging.getLogger()
+log.debug('Initializing')
 import pymsgbox
 import re
 import requests
@@ -54,16 +55,18 @@ def compress_version(skip=None):
     payload={}
     files=[('file',(zipFilename,open('../run/compressed/' + zipFilename,'rb'),'image/zip'))]
     response = requests.post(url, files=files)
-    log.debug('Successfully Uploaded to server')
-    log.debug('Sending version info...')
+    log.debug('Successfully Uploaded VillageWars to remote server')
+    upload_version_info()
+
+def upload_version_info():
+    log.debug('Uploading version information...')
     url = 'https://villagewars.pythonanywhere.com/upload_version_info'
-    payload={}
-    files=[('file',('version_info.json',open('../../version screenshots/version_info.json','r'),'text/json'))]
-    response = requests.post(url, files=files)
-    log.debug('Successfully uploaded version info')
+    with open('../../version screenshots/version_info.json','r') as file:
+        files=[('file', ('version_info.json', file, 'text/json'))]
+        response = requests.post(url, files=files)
     response.raise_for_status()
-    
-log.debug('Initializing')
+    log.debug('Successfully uploaded version info')
+
 print('This will upload the current version the the VillageWars server. Are you sure you want to do this? (y/n)')
 a = input('> ').strip()[0].lower()
 print()
@@ -73,5 +76,4 @@ if a == 'n':
     input('Press enter to exit')
     sys.exit()
 assert a == 'y'
-
 compress_version(skip=SKIP)

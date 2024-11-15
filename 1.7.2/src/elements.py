@@ -6,25 +6,25 @@ import toolbox
 
 SCREEN = pygame.Rect(0, 0, 1000, 650)
 
-def pass_condition(sprite, other, ignore):
+def pass_condition(sprite, other, ignore_friend, ignore):
     # `other` could be any dynamic object
     if sprite == other:
         return True
     if hasattr(sprite, 'type'):
-        if sprite.type in ignore and sprite.channel == other.channel:
+        if (sprite.type in ignore_friend and sprite.channel == other.channel) or sprite.type in ignore:
             return True
-        if 'Building' in ignore and issubclass(type(sprite), Building) and sprite.channel == other.channel:
+        if issubclass(type(sprite), Building) and (('Building' in ignore_friend and sprite.channel == other.channel) or 'Building' in ignore):
             return True
     else:
         logging.warning(f'Object of type `{type(sprite)}` has no `type` attribute.')
     return False
 class Group(pygame.sprite.Group):
     rect = 'rect'
-    def collide(self, other, rect, ignore=()):
-        sprites = self.collide_all(other, rect, ignore=ignore)
+    def collide(self, other, rect, ignore_friend=(), ignore=()):
+        sprites = self.collide_all(other, rect, ignore_friend=ignore_friend, ignore=ignore)
         if sprites: return sprites[0]
-    def collide_all(self, other, rect, ignore=()):
-        return [sprite for sprite in self if getattr(sprite, self.rect).colliderect(rect) and not pass_condition(sprite, other, ignore=ignore)]
+    def collide_all(self, other, rect, ignore_friend=(), ignore=()):
+        return [sprite for sprite in self if getattr(sprite, self.rect).colliderect(rect) and not pass_condition(sprite, other, ignore_friend=ignore_friend, ignore=ignore)]
 class Obstacles(Group):
     rect = 'obstacle_rect'
 class Dynamics(Group):
@@ -35,7 +35,7 @@ class Zones(Group):
 class Sprite(pygame.sprite.Sprite):
     groups = []
 
-Dummy = type('Dummy', (object,), {'__bool__': (lambda self: False)})()
+Dummy = type('Dummy', (object,), {'__bool__': (lambda self: False), '__getattr__': (lambda self, attr: None), 'gold': 0, 'food': 0})()
 
 class Balloon(Sprite):
     def __init__(self, owner, **kwargs):
@@ -86,14 +86,14 @@ class Balloon(Sprite):
         self.y += y
         self.test_collide()
     def test_collide(self):
-        obstacle = self.server.obstacles.collide(self.shooter, self.rect, ignore=['Gate'])
-        enemy = self.server.dynamics.collide(self.shooter, self.rect, ignore=['Character'])
+        obstacle = self.server.obstacles.collide(self.shooter, self.rect, ignore_friend=['Gate'])
+        enemy = self.server.dynamics.collide(self.shooter, self.rect, ignore_friend=['Character'])
 
         if obstacle:
             obstacle.getHurt(self.damage, angle=self.angle, knockback=self.knockback, name=self.shooter_name, attacker=self.shooter, msg=self.kill_msg)
             self.pop()
         elif enemy:
-            if 'Barbarian' in enemy.type and self.shooter.type == 'Barbarian Archer':
+            if 'Barbarian' in enemy.type and 'Barbarian' in self.shooter_name:
                 return
             result = enemy.getHurt(self.damage, angle=self.angle, knockback=self.knockback, attacker=self.shooter, name=self.shooter_name, msg=self.kill_msg)
             if result:
@@ -101,6 +101,10 @@ class Balloon(Sprite):
                 self.kill()
             else:
                 self.pop()
+                if enemy.type == 'Character' and enemy.dead and 'Barbarian' in self.shooter_name:
+                    self.shooter.gold += enemy.gold
+                    self.shooter.food += enemy.food
+                    enemy.gold = enemy.food = 0
     def pop(self):
         self.kill()
 
@@ -163,7 +167,7 @@ class Building(Sprite):
         self.health = self.max_health
         self.state = 'alive'
         self.level = 1
-        if self.character.has_builder:
+        if self.character.has_builder and self.type != 'Builder\'s':
             self.dimensions = self.dimensions[0] * 0.8, self.dimensions[1] * 0.8
         # pygame.Rects
         self.obstacle_rect = pygame.Rect(0, 0, 200, 200)  # The Building image's rect
@@ -356,3 +360,9 @@ class Building(Sprite):
         self.level_up(player)
     def level_up(self, player):
         pass
+
+def playsound(self, sound, rect):
+    for channel in self.server.users:
+        rect = channel.character.get_rect(rect)
+        if SCREEN.colliderect(rect):
+            channel.Send({'action': 'sound','sound': sound})

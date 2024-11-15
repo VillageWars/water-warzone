@@ -1,5 +1,8 @@
 # Python Standard Library Modules Import
 
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
+
 import shelve
 import random
 import json
@@ -8,8 +11,6 @@ import threading
 import re
 import sys
 import os
-import logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 
 # Configuration
 
@@ -29,6 +30,7 @@ from pymsgbox import alert, confirm, prompt, password
 import toolbox
 import toolbox as t
 from net2web import Client as ParentClient
+from remote_app_manager import Context
 
 import __main__
 
@@ -65,27 +67,27 @@ def find_cursor(cursor_param):
     res = regex.search(repr(cursor_param))
     return res.group(1)
 
+def shut_down():
+    p.mixer.music.stop()
+    p.quit()
+    input('Press enter to shut down')
+    sys.exit()
 
-class MyGameClient(ParentClient):
-    def __init__(self, host, port, screen, clock, username, version, color, skin, xp):
 
-        """
-        Client constructor function. This is the code that runs once
-        when a new client is made.
-        """
-        super().__init__(host=host, port=port)
+class Client(ParentClient):
+    def __init__(self, uri='ws://127.0.0.1:5555', screen=None, username='ModestNoob', color=(255,0,0), skin=0, ctx=None):
+
+        super().__init__(uri=uri)
         
-        # Start the game
         pygame.init()
-        pygame.mixer.pre_init(buffer=64)
-        game_width = 1000
-        game_height = 650
         self.started = False
         self.screen = screen
-        self.clock = clock
+        self.clock = p.time.Clock()
         self.skin = skin
         self.color = color
-        self.xp = xp
+        self.ctx = ctx or Context()
+
+        self.last_frame = pygame.Surface((1000, 650))
 
         self.fps_expected = 30
 
@@ -219,7 +221,6 @@ class MyGameClient(ParentClient):
             'barbarianraid': conf.sfx_dir + 'War song.mp3'
             }
 
-        self.paused = False
         self.F3 = False
 
         with open('tips.json', 'r') as tipfile:
@@ -238,7 +239,7 @@ class MyGameClient(ParentClient):
         
         self.achievement = [0, 'None']
 
-        self.version = version
+        self.version = conf.VERSION
         
 
     def update(self):
@@ -263,19 +264,6 @@ class MyGameClient(ParentClient):
             p.mouse.set_cursor(cursor)
         cursor = p.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
 
-        if self.achievement[0]:
-            self.achievement[0] -= 1
-            if self.achievement[0] >= 90:
-                x = (225/30) * (120-self.achievement[0])
-            elif self.achievement[0] <= 30:
-                x = (225/30) * self.achievement[0]
-            else:
-                x = 225
-            self.toDraw.append((self.achievement_pic, (1000-x, 55)))
-            text = self.small_font.render(self.achievement[1], True, (0,0,0))
-            text_rect = text.get_rect(midtop = (1120-x, 85))
-            self.toDraw.append([text, text_rect])
-
         if not self._connected:
             self.disconnected += 1
         else:
@@ -287,21 +275,7 @@ class MyGameClient(ParentClient):
         if self.disconnected == 50 and self.connected:
             c = confirm('Connection is low.', title='VillageWars', buttons=['Quit', 'Continue'])
             if c == 'Quit':
-                p.quit()
-                sys.exit()
-            #p.mixer.music.stop()
-            #self.screen.blit(p.image.load('../assets/Disconnected.png'), (0, 0))
-            #pygame.display.flip()
-            
-            #while True:                
-            #    for e in p.event.get():
-            #        if e.type == QUIT:
-            #            p.quit()
-            #            sys.exit()
-            #            
-            #    fps = self.clock.get_fps()
-            #    self.clock.tick(30)
-            #    pygame.display.set_caption("VillageWars fps: " + str(fps))
+                shut_down()
         
         self.tip_frame += 1
         if self.tip_frame == 250:
@@ -333,7 +307,7 @@ class MyGameClient(ParentClient):
                     p.mixer.music.play(-1, 0.0)
             if event.type == KEYUP and event.key == K_F2:
                 num = len(os.listdir('../run/screenshots')) + 1
-                name = 'sreenshot' + str(num)
+                name = f'screenshot{num}'
                 p.image.save(self.screen, '../run/screenshots/%s.png' % (name))
                 alert('Screenshot saved as %s.png' % (name))
             if event.type == KEYUP and event.key == K_F6:
@@ -364,35 +338,13 @@ class MyGameClient(ParentClient):
 
         self.Send({'action': 'keys', 'keys': keys, 'mouse':mouse})
 
-        
-        
-        
-        _screen = p.Surface((1000, 650))
-        for image in self.toDraw:
-            _screen.blit(image[0], image[1])
-        if self.paused:
-            _screen.blit(self.paused_image, (0, 0))
-        
-        self.screen.blit(_screen, (0, 0))
-        
-        
-            
-        # Tell pygame to update the screen
+        self.screen.blit(self.last_frame, (0, 0))
         pygame.display.flip()
 
         fps = self.clock.get_fps()
         self.Send({'action':'fps', 'fps':fps})
         self.clock.tick(self.fps_expected)
-        pygame.display.set_caption("VillageWars " + self.version + " fps: " + str(fps))
-
-
-    def ShutDown(self):
-        """
-        Client ShutDown function. Disconnects and closes the game.
-        """
-        input('Press enter to shut down')
-        sys.exit()
-        
+        pygame.display.set_caption("VillageWars " + self.version + " fps: " + str(fps))        
         
                 
     #####################################
@@ -409,19 +361,15 @@ class MyGameClient(ParentClient):
         self.gamemode = data['gamemode']
         
     def Network_receive(self, data):
-        #print(time.time() - data['timestamp'])
         self.diconnected = 0
         self._connected = True
-        if True: #time.time() - data['timestamp'] < 0.5:
-            self.fps_expected = 30
-            for i in data['data']:
-                exec('self.Network_' + i['action'] + '(i)')
-        else:
-            self.fps_expected = 60
+        self.fps_expected = 30
+        for i in data['data']:
+            exec('self.Network_' + i['action'] + '(i)')
+        self.Network_flip(data)
     
 
     def Network_fall(self, data):
-        
         self.Setting = self.no_walls_setting
         p.mixer.music.stop()
         p.mixer.music.load('../assets/sfx/villageLoop.mp3')
@@ -432,15 +380,13 @@ class MyGameClient(ParentClient):
     def Network_achievement(self, data):
         self.achievement = [120, data['type']]
 
-    def Network_pause(self, data):
-        self.paused = not self.paused
-
     def Network_flip(self, data):
-        if not self.paused:           
-            self.toDraw.clear()
-            self.toDraw = self.toDrawNext[:]
-            self.toDrawNext.clear()
-        
+        self.toDraw.clear()
+        self.toDraw.extend(self.toDrawNext)
+        self.toDrawNext.clear()
+        self.last_frame.fill((255,255,255))
+        for image in self.toDraw:
+            self.last_frame.blit(image[0], image[1])
         
     def Network_draw_setting(self, data):
         self.toDrawNext.append([self.Setting, data['coords']])
@@ -506,23 +452,7 @@ class MyGameClient(ParentClient):
         text = self.medium_font.render(data['username'], True, data['color'])
         text_rect = text.get_rect(midbottom = avatar_rect.midtop)
         text_rect.y -= 4
-        self.toDrawNext.append([text, text_rect])
-
-        #if data['host']:
-            #mouse = p.mouse.get_pos()
-            #click = p.mouse.get_pressed()
-
-            #image = self.x
-            #rect = image.get_rect(center=avatar_rect.topright)
-            #if rect.collidepoint(mouse):
-            #    global cursor
-            #    cursor = p.cursors.Cursor(pygame.SYSTEM_CURSOR_HAND)
-            #    image = self.x_hov
-            #    if click[0]:
-            #        self.Send({'action':'hack', 'command':'kick(self, "%s")' % (data['username'])})
-
-            #self.toDrawNext.append((image, rect))
-        
+        self.toDrawNext.append([text, text_rect])        
 
     def Network_victory(self, data):
         p.mixer.music.stop()
@@ -681,7 +611,6 @@ class MyGameClient(ParentClient):
                 gametime = round(gametime)
                 seconds = gametime % 60 + 1
                 minutes = gametime // 60
-                #print(seconds, minutes)
                 if seconds == 60:
                     seconds = 0
                     minutes += 1
@@ -1037,7 +966,6 @@ class MyGameClient(ParentClient):
         y = 20
         for message in reversed(data['messages']):
             color = list(message['color'])
-            #color.append(message['fade'])
             m = self.medium_font.render(message['message'], True, color)
             m.set_alpha(message['fade'])
             text_rect = m.get_rect(topleft=(20, y))
@@ -1297,7 +1225,6 @@ class MyGameClient(ParentClient):
         self.toDrawNext.append((surf, self.dropdown_rect))
         self.toDrawNext.append((text_surface, text_rect))
 
-
         
 
     def Network_connected(self, data):
@@ -1305,65 +1232,46 @@ class MyGameClient(ParentClient):
         Network_connected runs when you successfully connect to the server
         """
         self.Send({'action':'version', 'version':self.version})
-        self.Send({'action':'init', 'username':self.username, 'status':'JG', 'color':self.color, 'skin':self.skin, 'xp':self.xp})
+        self.Send({'action':'init', 'username':self.username, 'status':'JG', 'color':self.color, 'skin':self.skin, 'xp':0})
         __main__.stop_loading_circle = True
         print("Joined game")
 
         p.mixer.music.stop()
-        
-    
-    def Network_error(self, data):
-        """
-        Network_error runs when there is a server error
-        """
-        print('error:', data['error'][1])
-        self.ShutDown()
     
     def Network_disconnected(self, data):
         """
         Network_disconnected runs when you disconnect from the server
         """
-        self.ShutDown()
+        shut_down()
 
     def Network_kicked(self, data):
-        self.ShutDown()
-        p.quit()
-        exit()
+        """
+        Network_kicked runs when you are kicked from the server
+        """
+        shut_down()
 
 
-
-
-
-
-    
-def main(screen, clock, username, version, userInfo, ip, port=5555, musicPlaying=True):
+def main(screen, username, userInfo, ip, port=5555, musicPlaying=True):
     global running, cursor, music_playing
     running = True
     cursor = p.cursors.Cursor(p.SYSTEM_CURSOR_ARROW)
     music_playing = musicPlaying
-    print(ip)
     cursor = p.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
-    client = MyGameClient(ip, port, screen, clock, username, version, userInfo['color'], userInfo['skin'], userInfo['xp'])
+    client = Client(uri=f'ws://{ip}:{port}', screen=screen, username=username, color=userInfo['color'], skin=userInfo['skin'])
     while running:
         client.update()
-    client.ShutDown()
-    p.mixer.music.stop()
-    return music_playing
-
+    shut_down()
 
 if __name__ == '__main__':
     print('This program is open in debug mode.')
-    conf.init()
+    conf.init_assets()
     p.init()
     screen = p.display.set_mode((1000, 650))
-    clock = p.time.Clock()
     username = 'f'
-    version = '1.7.2'
-    userInfo = {'color': (0,0,255), 'skin': 0, 'xp': 0, 'username': 'f', 'password': 'f'}
+    userInfo = {'color': (0,0,255), 'username': 'f', 'skin': 0}
     ip = '127.0.0.1'
-    musicPlaying = False
-    main(screen, clock, username, version, userInfo, ip, musicPlaying)
-                   
+    musicPlaying = True
+    main(screen, username, userInfo, ip, musicPlaying=musicPlaying)
 
 
 

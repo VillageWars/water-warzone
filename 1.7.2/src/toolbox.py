@@ -271,3 +271,9 @@ def format_cost(*original_cost):
     if original_cost[1]:
         cost += str(original_cost[1]) + ' food'
     return cost
+
+def convert_to_uri(ip='127.0.0.1', port=5555):
+    if ip.replace('.', '').isdigit():
+        return f'ws://{ip}:{port}'
+    else:
+        return f'wss://{ip}'

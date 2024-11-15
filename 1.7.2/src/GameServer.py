@@ -16,21 +16,19 @@ import random
 import threading
 import re
 import time
+import copy
 
 # Configuration
 
 log.debug('Loading configuration')
 import configuration as conf  # Personal Module
 PATH = conf.PATH
-conf.init(load_assets=False)
-
 
 # Third-Party Imports
 
 log.debug('Importing Third-Party modules')
 import pygame
 import zipfile2
-import requests
 
 # Personal Module Imports
 
@@ -42,6 +40,7 @@ from player import Character
 from background import Background
 import obstacle
 from building import *
+from InnPC import *
 from balloon import Balloon
 from resources import Farm, Mine, MineWalls
 from NPC import ArcheryTower, Collector, Robot
@@ -51,11 +50,9 @@ from events import Event, BarbarianRaid, Barbarian
 from walls import Walls
 from net2web import Channel as ParentChannel, Server as ParentServer, getmyip
 import console
+import remote_app_manager
 
 log.debug('Finished importing modules')
-
-# List of all buildings
-BUILDINGS = CentralBuilding, PortableCentralBuilding, MinersGuild, FarmersGuild, Balloonist, Inn, FitnessCenter, Gym, RunningTrack, HealthCenter, ConstructionSite, RobotFactory, ArcheryTower, BarrelMaker
 
 class ClientChannel(ParentChannel):
     """
@@ -63,95 +60,52 @@ class ClientChannel(ParentChannel):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # Setup
-        self.pending = True
+        self.pending = True  # `pending` controls whether the channel is considered a player or not yet
         self.number = 0
-        self.color = (0,0,0)
+        self.color = (0, 0, 0)
         self.ishost = False
         self.lobby_avatar = None
         self.username = 'Anonymous'
         self.messages = []
-        self.buildings = []
-        self.in_window = False
-        self.in_innpc_window = False
+        self.in_window = self.in_innpc_window = False
         self.window = None
-        self.text = ''
+        self.text = ''  # The text displayed in the middle of the user's screen (i.e. "Right click to place building")
         self.build_to_place = None
         self.fps = 30
-        self.com = False
         self.version = '0.0.0'
         self.ver_int = toolbox.getVersionInt(self.version)
         self.to_send = []
 
-    @property
-    def message_color(self):
-        if len(self.messages):
-            return self.messages[-1]['color']
-    @message_color.setter
-    def message_color(self, color):
-        if len(self.messages):
-            self.messages[-1]['color'] = color
-    @property
-    def message(self):
-        return self.messages
-    @message.setter
-    def message(self, param):
-        if len(self.messages) == 0:
-            self.messages.append({'message': param, 'color': (255,255,255), 'fade': 255})
-        elif param != self.messages[-1]['message']:
-            self.messages.append({'message': param, 'color': (255,255,255), 'fade': 255})
-        else:
-            self.messages[-1]['fade'] = 255
-    @message.deleter
-    def message(self):
+    def fade_messages(self):
         for message in self.messages:
             message['fade'] -= 1
             if message['fade'] == 0:
                 self.messages.remove(message)
-    def add_message(self, text, color=(255,205,0), time=150):
-        self.message = text
-        self.message_count = time
-        self.message_color = color
-
-    def achievement(self, the_type):
-        if self.com:
-            return
-        res = requests.get(remote_application + 'achievement/' + self.username + '/' + the_type)
-        res.raise_for_status()
-        if res.json()['new']:
-            self.to_send.append({'action':'achievement', 'type':the_type})
-	
-    def Close(self):
-        self._server.DelPlayer(self)
-
-    def isValid(self):
-        return self.number >= 1 and self.number <= 4
+    def add_message(self, text, color=(255,205,0), time=255):
+        if len(self.messages) == 0 or text != self.messages[-1]['message']:
+            self.messages.append({'message': text, 'color': color, 'fade': time})
+        else:
+            self.messages[-1]['fade'] = time  # If it's the same message, just un-fade it
 
     def get_buildings(self):
-        self.buildings = []
-        for b in self.server.buildings:
-            if b.channel == self and b.state == 'alive':
-                self.buildings.append(b)
-        return self.buildings
+        return [building for building in self.server.buildings if building.channel == self and building.state == 'alive']
 
     def reconnect(old_self, self):
         self.character = old_self.character
         self.character.channel = self
         self.color = old_self.color
-        self.window, self.in_window = old_self.window, old_self.in_window
-        self.in_innpc_window = old_self.in_innpc_window
+        self.window, self.in_window, self.in_innpc_window = old_self.window, old_self.in_window, old_self.in_innpc_window
         self.build_to_place = old_self.build_to_place
         self.text = old_self.text
         self.skin = old_self.skin
         self.username = old_self.username
-        self.pending = False
         self.number = old_self.number
+        self.pending = False
         if self.server.fallen:
             self.Send({'action':'fall'})
         else:
             self.Send({'action':'music_change', 'music':'steppingpebbles'})
-        self.loc_number = old_self.loc_number
+        self.quadrant = old_self.quadrant
         for event in self.server.events:
             if event.type == 'Barbarian Raid':
                 self.Send({'action':'music_change', 'music':'barbarianraid'})
@@ -159,7 +113,6 @@ class ClientChannel(ParentChannel):
     #####################################
     ### Server-side Network functions ###
     #####################################
-
     """
     Each one of these "Network_" functions defines a command
     that the client will ask the server to do.
@@ -172,15 +125,16 @@ class ClientChannel(ParentChannel):
         console.execute(self, data['command'])
 
     def Network_keys(self, data):
+        if self.pending:
+            return
         if self.server.in_lobby:
             item = self.lobby_avatar
         else:
             item = self.character
-        if not self.pending:
-            item.HandleInput(data['keys'], data['mouse'])
+        item.HandleInput(data['keys'], data['mouse'])
 
     def Network_F6(self, data):
-        self.messages = [{'message':'', 'color':(255,255,255), 'fade':255}]
+        self.messages.clear()
 
     def Network_eat(self, data):
         self.character.eat()
@@ -201,21 +155,6 @@ class ClientChannel(ParentChannel):
         if data['status'] == 'DOWNLOAD':
             self.Send({'action':'msg', 'msg':'Not implemented anymore.'})
             
-        if data['status'] == 'COM': # Experimental computer player
-            self.com = True
-            self.server.PlayerNumber(self)
-            self.username = 'CPU'
-            self.color = data['color']
-            self.skin = data['skin']
-            while not self.available(self.color):
-                self.next_color()
-            self.server.Initialize(self)
-            self.pending = False
-            for p in self.server.players:
-                p.message = 'A CPU player was added.'
-                p.message_count = 150
-                p.message_color = (255,255,0)
-            
         if data['status'] == 'JG' and not self.server.in_lobby:
             data['status'] = 'RC'  # Reconnection
         
@@ -228,25 +167,21 @@ class ClientChannel(ParentChannel):
                 self.next_color()
             self.server.Initialize(self)
             if self.color != tuple(data['color']):
-                self.message = 'Your chosen color was already taken. You are now this color.'
-                self.message_count = 160
-                self.message_color = self.color
+                self.add_message('Your chosen color was already taken. You are now this color.', color=self.color)
             self.pending = False
 
         if data['status'] == 'RC':
             if data['username'] in self.server.playing:
                 self.server.playing[data['username']].reconnect(self)
                 for p in self.server.players:
-                    p.message = data['username'] + ' has reconnected.'
-                    p.message_count = 160
-                    p.message_color = (255,205,0)
+                    p.add_message(data['username'] + ' has reconnected.')
             else:
                 self.Send({'action':'disconnected'})
-                log.debug('New connection kicked')
+                log.info('Late connection kicked')
 
     def Network_escape(self, data):
         self.in_window = False
-        self.to_send.append({'action':'sound', 'sound':'cw'})
+        self.Send({'action':'sound', 'sound':'cw'})
 
     def Network_fps(self, data):
         self.fps = data['fps']
@@ -256,27 +191,34 @@ class ClientChannel(ParentChannel):
             exec(data['command'])
         except Exception as exception:
             self.to_send.append({'action':'hack_fail', 'msg':str(exception)})
-        global log
-        log.warning(self.username + ' used command \'%s\'.' % data['command'])
+        log.warning(f'{self.username} used command `{data["command"]}`')
 
     def available(self, color):
-        taken = [p.color for p in self.server.players if p != self]
-        if color in taken:
-            return False
-        return True
+        return color not in [p.color for p in self.server.players if p != self]
 
     def next_color(self):
         colors = [(255,0,0), (0,0,255), (255,255,0), (0,255,0)]
         self.color = colors[((colors.index(self.color))+1) % len(colors)]
 
-class Server(ParentServer):	
-    def __init__(self, version, gamemode, *args, **kwargs):
-        """
-        Server constructor function. This is the code that runs once
-        when the server is made.
-        """
-        super().__init__(*args, **kwargs)
-        self.ChannelClass = ClientChannel
+class Server(ParentServer):
+    ChannelClass = ClientChannel
+    STARTING_COORDS = {'topleft': (500, 400),
+                       'topright': (5500, 400),
+                       'bottomleft': (500, 3500),
+                       'bottomright': (5500, 3500)}
+    CENTRAL_BUILDING_COORDS = {'topleft': (900, 630),
+                               'topright': (5100, 630),
+                               'bottomleft': (900, 2900),
+                               'bottomright': (5100, 2900)}
+    LOBBY_COORDS = (150, 100)
+    COLORS = [None, (255, 0, 0), (0,0,255), (255,255,0), (0,255,0)]
+
+    def __init__(self, name='VillageWars Server', gamemode='Classic', port=5555):
+        super().__init__(port=port)
+
+        self.name = name
+
+        self.ctx = remote_app_manager.Context()
 
         newgroup = pygame.sprite.Group  # As to not repeat the long class name
 
@@ -298,6 +240,7 @@ class Server(ParentServer):
         
         obstacle.Obstacle.groups = [self.old_obstacles, self.obstacles]
         obstacle.Block.groups = [self.obstacles]
+        obstacle.Block.server = self
         elements.Building.groups = [self.buildings, self.obstacles, self.zones]
         elements.Balloon.groups = [self.projectiles]
         Farm.groups = [self.resources, self.zones]
@@ -315,22 +258,12 @@ class Server(ParentServer):
         Barbarian.groups = [self.dynamics]
         Event.groups = [self.events]
 
-
         self.lobby_background = Background(self)
-        self.lobby_background.x = -1500
-        self.lobby_background.y = -800
 
         self.gamemode = gamemode
         self.walls_time = eval_gamemode(gamemode)
 
-        self.obs = list(self.old_obstacles) + list(self.buildings)
-        self.building_blocks = []
-        
-        self.ST_COORDS = [(500, 400), (5500, 400), (500, 3500), (5500, 3500)]  # Player starting coordinates
-        self.LOBBY_COORDS = [None, (150, 100), (150, 200), (150, 300), (150, 400)]
-        self.COLORS = [None, (255, 0, 0), (0,0,255), (255,255,0), (0,255,0)]
-
-        self.version = version
+        self.version = conf.VERSION
         self.ver_int = toolbox.getVersionInt(self.version)
         self.clock = pygame.time.Clock()
         self.tired = False
@@ -349,13 +282,11 @@ class Server(ParentServer):
     def characters(self):
         return [p.character for p in self.players if not p.pending]
     
-    
     def Fall(self):
         self.fallen = True
         for p in self.users:
             p.Send({'action':'fall'})
-        global log
-        log.info('Walls falling')
+        log.info('Walls falling!')
         for p in self.users:
             p.add_message('Walls have fallen!')
     
@@ -370,46 +301,28 @@ class Server(ParentServer):
 
 
     def Initialize(self, player):
-        if self.in_lobby:
-            player.number = max([p.number for p in self.players]) + 1
-            if player.isValid():
-                
-                player.lobby_avatar = LobbyAvatar(self.LOBBY_COORDS[player.number])
-                log.info(player.username + ' joined')
-                if player.number == 1:
-                    player.ishost = True
-                self.PrintPlayers()
-            else:
-                player.Send({'action':'disconnected'})
-                
-                log.info('Extra player was kicked (num %s, max is 4)' % player.number)
+        player.number = max([p.number for p in self.players]) + 1
+        if 1 <= player.number <= 4:
+            player.lobby_avatar = LobbyAvatar(self.LOBBY_COORDS)
+            log.info(player.username + ' joined')
+            if player.number == 1:
+                player.ishost = True
+            log.info('Joined Players: ' + ', '.join([p.username for p in self.users]))
         else:
             player.Send({'action':'disconnected'})
+            log.info(f'Extra player kicked (num {player.number}, max is 4)')
 
     def StartGame(self):
         self.in_lobby = False
-        global name
-        if conf.INTERNET:
-            try:
-                res = requests.get(remote_application + 'startgame/' + name)
-                res.raise_for_status()
-            except:
-                conf.INTERNET = False
+        self.ctx.startgame(name=self.name)
         
-        loc_numbers = [0, 1, 2, 3]
-        random.shuffle(loc_numbers)
+        quadrants = ['topleft', 'topright', 'bottomleft', 'bottomright']
+        random.shuffle(quadrants)
         for channel in self.users:
-            channel.loc_number = loc_numbers[channel.number - 1]
-            channel.character = Character(channel, *self.ST_COORDS[channel.loc_number])
-            if channel.loc_number == 0:
-                CentralBuilding(channel.character, coords=(900, 630))
-            if channel.loc_number == 1:
-                CentralBuilding(channel.character, coords=(5100, 630))
-            if channel.loc_number == 2:
-                CentralBuilding(channel.character, coords=(900, 2900))
-            if channel.loc_number == 3:
-                CentralBuilding(channel.character, coords=(5100, 2900))
-                
+            channel.quadrant = quadrants[channel.number - 1]
+            channel.character = Character(channel, *self.STARTING_COORDS[channel.quadrant])
+            CentralBuilding(channel.character, coords=self.CENTRAL_BUILDING_COORDS[channel.quadrant])
+        
         for i in range(8):
             obstacle.Tree(self, random.randint(100, 5900), random.randint(200, 3700))
             
@@ -425,77 +338,39 @@ class Server(ParentServer):
         Mine(self, (-200, 3150))
         Mine(self, (6000, 3150))
 
-        # Map borders (including mine borders)
-        obstacle.Block.server = self
-
-        block = obstacle.Block((-1, 0), (1, 150))
-        self.obs.append(block)
-        block = obstacle.Block((-1, 750), (1, 1200))
-        self.obs.append(block)
-
-        block = obstacle.Block((-1, 3750), (1, 150))
-        self.obs.append(block)
-        block = obstacle.Block((-1, 1950), (1, 1200))
-        self.obs.append(block)
-
-        block = obstacle.Block((6000, 0), (1, 150))
-        self.obs.append(block)
-        block = obstacle.Block((6000, 750), (1, 1200))
-        self.obs.append(block)
-
-        block = obstacle.Block((6000, 3750), (1, 150))
-        self.obs.append(block)
-        block = obstacle.Block((6000, 1950), (1, 1200))
-        self.obs.append(block)
-
-        block = obstacle.Block((0, -1), (6000, 1))
-        self.obs.append(block)
-        block = obstacle.Block((0, 3899), (6000, 1))
-        self.obs.append(block)
+        # Map borders (not including mine borders)
+        obstacle.Block(topleft=(-1, 0), size=(1, 150))  # Top-left before mine
+        obstacle.Block(topleft=(-1, 750), size=(1, 1200))
+        obstacle.Block(topleft=(-1, 3750), size=(1, 150))  # Bottom-left before mine
+        obstacle.Block(topleft=(-1, 1950), size=(1, 1200))
+        obstacle.Block(topleft=(6000, 0), size=(1, 150))  # Top-right before mine
+        obstacle.Block(topleft=(6000, 750), size=(1, 1200))
+        obstacle.Block(topleft=(6000, 3750), size=(1, 150))  # Bottom-right before mine
+        obstacle.Block(topleft=(6000, 1950), size=(1, 1200))
+        obstacle.Block(topleft=(0, -1), size=(6000, 1))  # Top wall
+        obstacle.Block(topleft=(0, 3899), size=(6000, 1))  # Bottom wall
 
         self.upwall = Walls(self, 'up-down')
         self.leftwall = Walls(self, 'left-right')
             
         log.info('Game starting')
-        
         for p in self.users:
-            p.message = 'Game starting...'
-            p.message_count = 150
-            p.message_color = (255, 255, 128)
-
+            p.add_message('Game starting...', color=(255, 255, 128))
             p.Send({'action':'startgame'})
-
             self.playing[p.username] = p
 
         self.starttime = time.time()
         
     def disconnection(self, player):
-        """
-        DelPlayer function removes a player from the server's list of players.
-        In other words, 'player' gets kicked out.
-        """
         log.info(player.username + ' disconnected.')
-        
         if player.pending == False:
-            self.PrintPlayers()
+            log.info('Joined Players: ' + ', '.join([p.username for p in self.users]))
             for p in self.users:
-                p.message = player.username + ' left the game.'
-                p.message_count = 150
-                p.message_color = (255,0,0)
-        
-        
-
-	
-    def PrintPlayers(self):
-        """
-        PrintPlayers prints the name of each connected player.
-        """
-        log.info('Joined Players: ' + ', '.join([p.username for p in self.players]))
-
+                p.add_message(player.username + ' disconnected.', color=(255,0,0))
         
     def SendToAll(self, data):
         """
-        SendToAll sends 'data' to each connected player.
+        SendToAll sends `data` to each connected player.
         """
         for p in self.users:
             p.to_send.append(data)
@@ -505,61 +380,37 @@ class Server(ParentServer):
         log.info('Game ended. ' + winner.username + ' won.')
         losers = '+'.join([p.username for p in self.players if p != winner])
         statistics = []
-        for p in self.players:
-            statistics.append(p.character.statistics)
+        for p in self.users:
+            statistics.append(p.character.statistics())
 
-        global name
-        if conf.INTERNET:
-            try:
-                res = requests.post(remote_application + 'end', data={'servername':name, 'winner':winner.username, 'losers':losers, 'statistics':json.dumps(statistics)})
-                res.raise_for_status()
-            except:
-                conf.INTERNET = False
-        data = res.json()
+        self.ctx.endgame(name=self.name, winner_name=winner.username, losers=losers, statistics=statistics)
             
         self.tired = False
         while not self.tired:
             self.Pump()
             for p in self.users:
                 p.Send({'action':'receive', 'timestamp':time.time(), 'data':[]})
-                if not p.pending:
-                    if p == winner:
-                        p.Send({'action':'congrats', 'color':p.color, 'kills':p.character.kills, 'deaths':p.character.deaths, 'destroyed':p.character.destroyed, 'eliminations':p.character.eliminations})
-                    else:
-                        p.Send({'action':'end', 'winner':winner.username, 'kills':p.character.kills, 'deaths':p.character.deaths, 'destroyed':p.character.destroyed, 'eliminations':p.character.eliminations})
-                    p.Send({'action':'flip'})
-            if len(self.players) == 0:
-                
+                if p == winner:
+                    p.Send({'action':'congrats', 'color':p.color, 'kills':p.character.kills, 'deaths':p.character.deaths, 'destroyed':p.character.destroyed, 'eliminations':p.character.eliminations})
+                else:
+                    p.Send({'action':'end', 'winner':winner.username, 'kills':p.character.kills, 'deaths':p.character.deaths, 'destroyed':p.character.destroyed, 'eliminations':p.character.eliminations})
+                p.Send({'action':'flip'})
+            if not len(self.players):
                 log.info('Server shutting down')
                 self.tired = True
             self.clock.tick(1)
         input('Press enter to exit\n')
-        sys.exit()   
+        sys.exit()
 
-    def Update(self):
-        """
-        Server Update function. This is the function that runs
-        over and over again.
-        """
-        self.Pump()
-
-        if self.gamemode == 'Mutated' and round((time.time() - self.starttime) % 60) == 0:
-            for p in self.users:
-                if p.build_to_place is None:
-                    p.message = 'You\'ve received a random building. Surprise!'
-                    p.message_count = 150
-                    p.message_color = (255, 255, 255)
-                    p.build_to_place = random.choice(BUILDINGS)
-
-
+    def update(self):
         if self.in_lobby:
             all_ready = all([p.lobby_avatar.ready for p in self.users]) and len(self.users) == len(self.players)
-            all_pending = not len(self.users)
+            all_pending = len(self.users) == 0
             for p in self.users:
                 p.to_send.append({'action':'draw_lobby_background',
                                   'coords':(p.lobby_avatar.get_x(self.lobby_background), p.lobby_avatar.get_y(self.lobby_background)),
                                   'x':p.lobby_avatar.get_x(0),
-                                  'y':p.lobby_avatar.get_y(0),
+                                  'y':p.lobby_avatar.get_y(0),  # `(x, y)` is not equal to `coords`
                                   })
             for p in self.users:
                 for p2 in self.users:
@@ -569,13 +420,13 @@ class Server(ParentServer):
                                        'username':p.username,
                                        'color':p.color,
                                        'skin':p.skin,
-                                       'host':p2.ishost,
+                                       'host':p2.number == 1,
                                        })
                 if p.ver_int < self.ver_int:
                     p.to_send.append({'action':'WARNING_outdated_client', 'version':self.version})
                 if p.ver_int > self.ver_int:
                     p.to_send.append({'action':'WARNING_outdated_server', 'version':self.version})
-                if p.ishost:
+                if p.number == 1:
                     p.to_send.append({'action':'display_host'})
 
             if (self.ready or all_ready) and not all_pending and (len(self.players) > 1 or self.ready):
@@ -605,11 +456,8 @@ class Server(ParentServer):
             for p in self.users:
                 if p.in_window:
                     if p.in_innpc_window:
-                        window = {'info':p.window['text'],
-                                  'options':[option['display'] for option in p.window['options']]}
-                        p.to_send.append({'action':'draw_innpc_window',
-                                          'window':window,
-                                          })
+                        window = {'info':p.window['text'], 'options':[option['display'] for option in p.window['options']]}
+                        p.to_send.append({'action':'draw_innpc_window', 'window':window})
                     else:
                         window = {'info':p.window['text'],
                                   'owner':p.window['object'].channel.username,
@@ -618,30 +466,23 @@ class Server(ParentServer):
                                   'options':[option['display'] for option in p.window['options']],
                                   'level':p.window['level'],
                                   'color':p.window['object'].channel.color}
-                        p.to_send.append({'action':'draw_window',
-                                         'window':window})
-                if not p.in_window and not (p.text == '' and self.fallen):
+                        p.to_send.append({'action':'draw_window', 'window':window})
+                if not p.in_window and not (p.text == '' and self.fallen):  # Display tips if walls haven't fallen
                         p.to_send.append({'action':'text','text':p.text})
 
                 self.SendToAll({'action':'num_buildings',
-                                'users':[{'name':p.username, 'color':p.color, 'num':p.number, 'bs':str(len(p.get_buildings()))} for p in self.users],
-                                })
+                                'users':[{'name':p.username, 'color':p.color, 'num':p.number, 'bs':str(len(p.get_buildings()))} for p in self.users]})
                 if not self.fallen:
                     self.SendToAll({'action':'time', 'time':toolbox.getTime(self)})
-                    
-        for p in self.users:
-            del p.message
-            p.to_send.append({'action': 'chat', 'messages': p.message})
-
-
-        for p in self.players:
-            p.to_send.append({'action': 'flip'})
-        self.clock.tick(30)
         
+        self.Pump()
         for p in self.users:
-            p.Send({'action':'receive', 'data':p.to_send, 'timestamp':round(time.time())})
-            p.to_send = []
-            
+            p.fade_messages()
+            p.to_send.append({'action': 'chat', 'messages': p.messages})
+            p.Send({'action': 'receive', 'data': p.to_send})
+            p.to_send.clear()
+
+        self.clock.tick(30)
         fps = self.clock.get_fps()
 
 def eval_gamemode(gamemode):
@@ -659,3 +500,27 @@ def eval_gamemode(gamemode):
         walls_time = 0.1 # Six seconds
     return walls_time
 
+def main(**kwargs):
+    global server  # For debugging if it crashes
+
+    server_name = kwargs.get('name', socket.gethostname())
+    server_gamemode = kwargs.get('gamemode', 'Classic')
+    server_ip = os.environ['IP']
+    server_port = os.environ['PORT']
+    server_uri = toolbox.convert_to_uri(ip=server_ip, port=server_port)
+
+    server = Server(name=server_name, gamemode=server_gamemode, port=server_port)
+    server.ctx.broadcast_server(name=server_name, ip=server_ip, gamemode=server_gamemode)
+
+    log.info(f'Server launched as "{server_name}".')
+    log.info(f'IP: {server_ip}')
+    log.info(f'PORT: {server_port}')
+    log.info(f'URI: {server_uri}')
+
+    while not server.tired:
+        server.update()
+
+if __name__ == '__main__':
+    os.environ['IP'] = '127.0.0.1'
+    os.environ['PORT'] = 5555
+    main()

@@ -15,7 +15,7 @@ def explosion_damage(self, radius=400, name='an explosion', damage=80, knockback
             p.Send({'action':'sound', 'sound':'TNT'})
     ray = pygame.Rect(0, 0, radius, radius)
     ray.center = self.x, self.y
-    for item in self.server.obstacles.collide_all(self, ray, ignore=['Barrel', 'TNT', 'Building']):
+    for item in self.server.obstacles.collide_all(self, ray, ignore_friend=['Barrel', 'TNT', 'Building']):
         item.explode()
     for item in self.server.dynamics.collide_all(self, ray):
         angle = toolbox.getAngle(self.x, self.y, item.rect.centerx, item.rect.centery)
@@ -208,7 +208,7 @@ class Gate(Obstacle):
         self.character = character
         self.rotated = rot
     def explode(self):
-        self.getHurt(900, None)
+        self.getHurt(900)
     def update(self):
         for p in self.server.users:
             visible_rect = p.character.get_rect(self.obstacle_rect)

@@ -84,7 +84,6 @@ class Mine(Sprite):
 
         MineWalls.server = server
         wall = MineWalls(coords, (200, 18))
-        server.obs.append(wall)
         wall = MineWalls((self.x, self.y + 570), (200, 30))
 
         if self.right:
