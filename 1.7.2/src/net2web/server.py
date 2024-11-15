@@ -135,13 +135,9 @@ class BaseServer:
 
     async def main(self):
 
-        # Set the stop condition when receiving SIGTERM.
+
         loop = asyncio.get_running_loop()
         stop = loop.create_future()
-        try:
-            loop.add_signal_handler(signal.SIGTERM, stop.set_result, None)
-        except:
-            log.warning('No SIGTERM')
 
         async with websockets.serve(self.handler, "", self.port):
             await stop
