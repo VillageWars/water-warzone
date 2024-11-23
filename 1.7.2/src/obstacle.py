@@ -15,7 +15,7 @@ def explosion_damage(self, radius=400, name='an explosion', damage=80, knockback
             p.Send({'action':'sound', 'sound':'TNT'})
     ray = pygame.Rect(0, 0, radius, radius)
     ray.center = self.x, self.y
-    for item in self.server.obstacles.collide_all(self, ray, ignore_friend=['Barrel', 'TNT', 'Building']):
+    for item in self.server.obstacles.collide_all(self, ray, ignore_friend=['Barrel', 'TNT', 'Building', 'Archery Tower']):
         item.explode()
     for item in self.server.dynamics.collide_all(self, ray):
         angle = toolbox.getAngle(self.x, self.y, item.rect.centerx, item.rect.centery)
@@ -71,6 +71,9 @@ class Sappling(Sprite):
                         'coords':visible_rect.center})
 
 class Boulder(OldObstacle):
+    '''
+    Unused
+    '''
     type = 'Boulder'
     dimensions = (200, 200)
     def __init__(self, server, x, y):

@@ -1257,7 +1257,11 @@ def main(screen, username, userInfo, ip, port=5555, musicPlaying=True):
     cursor = p.cursors.Cursor(p.SYSTEM_CURSOR_ARROW)
     music_playing = musicPlaying
     cursor = p.cursors.Cursor(pygame.SYSTEM_CURSOR_ARROW)
-    client = Client(uri=f'ws://{ip}:{port}', screen=screen, username=username, color=userInfo['color'], skin=userInfo['skin'])
+    if ip.lower() != ip.upper():
+        uri = f'wss://{ip}'
+    else:
+        uri = f'ws://{ip}:{port}'
+    client = Client(uri=uri, screen=screen, username=username, color=userInfo['color'], skin=userInfo['skin'])
     while running:
         client.update()
     shut_down()

@@ -27,13 +27,14 @@ class Context:
             return {}
         try:
             response = getattr(self.session, request_type)(*args, **kwargs)
-        except requests.exceptions.ConnectionError:
-            self.enabled = internet_connection
+        except requests.exceptions.ConnectionError as exc:
+            self.internet_connection = False
+            log.error(exc)
             return {}
         try:
             response.raise_for_status()
         except Exception as exc:
-            log.error(f'{request_type.upper()} request to {args[0]} failed: {exc}')
+            log.error(exc)
         try:
             return response.json()
         except requests.exceptions.JSONDecodeError:

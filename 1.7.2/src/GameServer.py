@@ -480,10 +480,10 @@ class Server(ParentServer):
             p.fade_messages()
             p.to_send.append({'action': 'chat', 'messages': p.messages})
             p.Send({'action': 'receive', 'data': p.to_send})
-            p.to_send.clear()
+            p.to_send = []
 
         self.clock.tick(30)
-        fps = self.clock.get_fps()
+        self.fps = self.clock.get_fps()
 
 def eval_gamemode(gamemode):
     if gamemode == 'Classic':

@@ -77,6 +77,10 @@ class Character(Sprite):
         self.in_barrel = False
         self.barrel_max_health = 0
 
+        # For Alchemist and Rancher
+        self.farm = None
+        self.mine = None
+
         # Non-Vanilla VillageWars
         self.invincible = False
 
@@ -260,7 +264,7 @@ class Character(Sprite):
             y = 200 + i * 40
             rect = pygame.Rect(x, y, 600, 50)
             if rect.collidepoint((mouse[0], mouse[1])):
-                self.channel.window['object'].do_action(self, option['action'], option['gold-cost'], option['food-cost'], option['no'])
+                self.channel.window['object'].do_action(self, option['action'], gold_cost=option['gold-cost'], food_cost=option['food-cost'], condition=option.get('condition', 'True'), no=option['no'])
                 return
     def handle_nowindow(self, keys, mouse):
         self.crate_hold = keys[pygame.K_x] and self.crate_hold
@@ -405,7 +409,8 @@ class Character(Sprite):
 
 
     def get_speed(self):
-        speed = (max(self.speed, 16) if self.dead else self.speed)
-        speed /= self.channel.fps
-        speed *= 30
-        return speed
+        '''
+        Compensates for differences in connectino speeds.
+        This function ensures no one player moves faster than another simply because they have a faster connection.
+        '''
+        return ((max(self.speed, 16) if self.dead else self.speed) * 30) / max(self.channel.fps, 5)

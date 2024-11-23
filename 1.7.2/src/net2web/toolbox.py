@@ -2,7 +2,6 @@ import time
 import socket
 import requests
 
-
 class Clock:
     def __init__(self, fps=30):
         self.frame_delay = 1 / fps
@@ -32,3 +31,4 @@ def getmyip():
         return socket.gethostbyname(socket.gethostname())
     except:
         return '127.0.0.1'
+

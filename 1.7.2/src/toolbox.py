@@ -8,6 +8,8 @@ import sys
 import os
 import logging
 import traceback
+import ctypes
+import threading
 
 # Configuration
 
@@ -277,3 +279,28 @@ def convert_to_uri(ip='127.0.0.1', port=5555):
         return f'ws://{ip}:{port}'
     else:
         return f'wss://{ip}'
+
+
+class Thread(threading.Thread):
+    def __init__(self, *args, timeout=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stop_event = threading.Event()
+        self.timeout = timeout
+        if self.timeout:
+            self.timeout_thread = threading.Thread(target=self.queue_timeout)
+            self.timeout_thread.start()
+    def queue_timeout(self):
+        time.sleep(self.timeout)
+        self.kill()
+    def kill(self):
+        self._stop_event.set()
+        if self.is_alive():
+            self.raise_exception()
+    def raise_exception(self):
+        thread_id = ctypes.c_long(self.ident)
+        res = ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, ctypes.py_object(SystemExit))
+        if res == 0:
+            raise ValueError("Invalid thread ID")
+        elif res > 1:
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
+            raise SystemError("PyThreadState_SetAsyncExc failed")

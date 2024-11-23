@@ -15,6 +15,16 @@ from .toolbox import Clock
 
 
 class BaseChannel:
+    '''
+    Base class for handling WebSocket communication.
+
+    Attributes:
+        websocket: The WebSocket connection.
+        messages: List of received messages.
+        to_send: List of messages to be sent.
+        id: Unique identifier for the channel.
+        clock: Clock object to manage timing.
+    '''
     def __init__(self):
         self.websocket = None
         self.messages = []
@@ -23,12 +33,15 @@ class BaseChannel:
         self.clock = Clock(30)
 
     async def send(self, data):
-        """
-        Send a message.
-        """
+        '''
+        Send data through the WebSocket connection.
+        '''
         await self.websocket.send(json.dumps(data))
 
     async def send_messages(self):
+        '''
+        Continuously send messages from the to_send list.
+        '''
         while True:
             try:
                 messages_to_send = copy.copy(self.to_send)
@@ -47,6 +60,9 @@ class BaseChannel:
                     break
         
     async def recv(self):
+        '''
+        Continuously receive messages and append them to the messages list.
+        '''
         while True:
             try:
                 message = await self.websocket.recv()
@@ -59,28 +75,36 @@ class BaseChannel:
                     break
 
     async def handler(self, websocket):
-        """
-        Handle a connection and dispatch it according to who is connecting.
-        """
+        '''
+        Handle a connection and manage sending and receiving messages.
+        '''
         self.websocket = websocket
         task1 = asyncio.create_task(self.recv())
         task2 = asyncio.create_task(self.send_messages())
-
-        # Wait for tasks to complete
         await asyncio.gather(task1, task2)
 
 class Channel:
+    '''
+    Channel class for managing communication with a server.
+
+    Attributes:
+        server: The server to which the channel is connected.
+        async_server: Instance of BaseChannel for asynchronous operations.
+        connected: Boolean indicating if the channel is connected.
+    '''
     def __init__(self, server):
         self.server = server
         self.async_server = BaseChannel()
         self._connected = False
-        self._warned = []
         
     @property
     def connected(self):
         return self._connected
         
     def pump(self):
+        '''
+        Process all pending messages.
+        '''
         num = 0  # There's a small chance we will receive a new message during the pump
         while self.async_server.messages:
             message = self.async_server.messages.pop(0)
@@ -101,19 +125,21 @@ class Channel:
         if num > 0:
             log.debug('Pumped %s messages successfully' % num)
             return
-    def error(self, message):
-        self.async_server.error(message)
 
     def send(self, data, force=False):
+        '''
+        Send a message through the channel.
+
+        Args:
+            data (dict): The message data to be sent.
+            force (bool): Force sending the message even if not connected.
+        '''
         if self.connected or force:
-            self.async_server.to_send.append(copy.deepcopy(data))
+            self.async_server.to_send.append(data)
         else:
             log.debug('Not yet connected, failed to send action "' + data['action'] + '"')
 
     Send = send  # Compatibility with PodSixNet
-
-    def Network_error(self, data):
-        log.error('Error:', data['message'])
 
     def Network_connection(self, data):
         pass
@@ -125,22 +151,33 @@ class Channel:
         return hash(self.async_server.id)
 
 class BaseServer:
+    '''
+    Base class for a WebSocket server.
+
+    Attributes:
+        server: The server object.
+        channels: List of connected channels.
+        port: The port to listen on.
+    '''
     def __init__(self, server, port=None):
         self.server = server
         self.channels = []
         self.port = port
 
     def start(self):
+        '''
+        Start the server.
+        '''
         asyncio.run(self.main())
 
     async def main(self):
-
-
-        loop = asyncio.get_running_loop()
-        stop = loop.create_future()
-
-        async with websockets.serve(self.handler, "", self.port):
-            await stop
+        await websockets.serve(self.handler, "", self.port)
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError as exc:
+            logging.error('Server stopped.')
+            server.close()
+            await server.wait_closed()
             
     async def handler(self, websocket):
         """
@@ -155,6 +192,12 @@ class BaseServer:
             await websocket.send(error_message)
 
 class Server():
+    '''
+    Main server class for managing channels and player connections.
+
+    Attributes:
+        async_server: Instance of BaseServer for asynchronous operations.
+    '''
     def __init__(self, port=5555):
         self.async_server = BaseServer(self, port=port)
         self.async_server.thread = threading.Thread(target=self.async_server.start)
@@ -168,13 +211,22 @@ class Server():
         return self.async_server.channels
 
     def pump(self):
+        '''
+        Process messages for all players.
+        '''
         for player in self.players:
             player.pump()
             
     Pump = pump  # Compatibility with PodSixNet
 
     def connection(self, channel):
+        '''
+        Handle a new channel connection.
+        '''
         log.info('Channel connected!')
 
     def disconnection(self, channel):
+        '''
+        Handle a channel disconnection.
+        '''
         log.info('Channel disconnected')

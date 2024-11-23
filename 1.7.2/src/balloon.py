@@ -21,7 +21,7 @@ class ArcheryBalloon(Balloon):
         if self.shooter.type != 'Archery Tower':
             self.shooter_name = 'An Archery Tower balloon'
         else:
-            self.shooter_name = self.shooter.name + '\'s Archery Tower'
+            self.shooter_name = self.shooter.character.name + '\'s Archery Tower'
         self.image_id = 0
 
 class Bolt(elements.Balloon):

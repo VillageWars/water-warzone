@@ -63,12 +63,13 @@ class InnPC(Building):
             'max_health': self.building_max_health,
             'options': self.options,
             'get_4th_info': self.get_4th_info,
-            'condition': self.condition}
+            'get_info': self.get_info,
+            }
         for method in self.building_methods:
             attributes[method] = self.building_methods[method]
         class_name = self.building_type.replace(' ', '').replace('\'', '')
         parent_classes = (Building,)
-        return type(class_name, parent_classes, attributes)  # Syntax for creating a class with a `class` statement
+        return type(class_name, parent_classes, attributes)  # Syntax for creating a class without a `class` statement
     def options(self, player):
         return {}
     def gen_options(self, channel):
@@ -93,13 +94,13 @@ class InnPC(Building):
         options = []
         if hasattr(self, 'options'):
             for option in self.options(channel.character):
-                if self.condition(channel.character, option['action']):
+                if self.condition(channel.character, option['action'], condition=option.get('condition', 'True')):
                     option_complete(options, option)
         option_complete(options, {'name': 'Out', 'action': self.Out})
         return options
 
     def gen_window(self, channel):
-        window = {'text': self.info,
+        window = {'text': self.get_info(),
                   'object': self,
                   'options': self.gen_options(channel)}
         channel.window = window
@@ -193,35 +194,42 @@ class Alchemist(InnPC):
     building_info = 'This building is for the Alchemist, so that he can always stay', 'with you.'
     building_dimensions = (490, 490)
     building_max_health = 220
-    mine = None
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def get_info(self):
+        default = super().get_info()
+        if self.determine_mine() is None:
+            info = list(default)
+            if self.type == 'Alchemist':
+                info.append('(Notice: Get a Miner\'s Guild to benefit from this)')
+            elif self.type == 'Alchemist\'s Lab':
+                info[1] += ' (Notice: Get a Miner\'s Guild to benefit from this)'
+            return tuple(info)
+        else:
+            return default
     def determine_mine(self):
+        if self.character.mine: return self.character.mine
         for building in self.channel.get_buildings():
             if building.type == 'Miner\'s Guild':
-                self.mine = building.miner.yard
-                break
+                self.character.mine = building.miner.yard
+                return self.character.mine
     def options(self, character):
         return [{'name': '+10 to Gold Discovery Rate',
                     'gold-cost': 4,
-                    'action': self.rate1},
+                    'action': self.rate1,
+                    'condition': 'self.determine_mine() and self.character.mine.production > 250'},
                 {'name': '+250 to Gold Discovery Rate',
                     'gold-cost': 60,
-                    'action': self.rate2}]
-    def condition(self, character, action, **kwargs):
-        self.determine_mine()
-        if_is = self.if_is(action)
-        if (if_is('rate1') or if_is('rate2')) and (self.mine is None or self.mine.production == 250):
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.rate2,
+                    'condition': 'self.determine_mine() and self.character.mine.production > 250'}]
     def get_4th_info(self, channel):
-        return 'Gold Discovery Rate', (str(1250 - self.mine.production) if self.mine else 'unknown')
+        self.determine_mine()
+        return 'Gold Discovery Rate', (str(1250 - self.character.mine.production) if self.character.mine else 'unknown')
     def rate1(self, character):
         character.channel.add_message('You have increased your Gold Discovery Rate by 10 for 10 gold.')
-        self.mine.production = max(250, self.mine.production - 10)
+        self.character.mine.production = max(250, self.character.mine.production - 10)
     def rate2(self, character):
         character.channel.add_message('You have increased your Gold Discovery Rate by 250 for 60 gold.')
-        self.mine.production = max(250, self.mine.production - 250)
+        self.character.mine.production = max(250, self.character.mine.production - 250)
+    building_methods = {'determine_mine': determine_mine}
 
 class Rancher(InnPC):
     type = 'Rancher'
@@ -231,33 +239,42 @@ class Rancher(InnPC):
     building_info = 'This building is for the Rancher, so that he can always stay', 'with you.'
     building_dimensions = (490, 490)
     building_max_health = 220
-    farm = None
+    def get_info(self):
+        default = super().get_info()
+        if self.determine_farm() is None:
+            info = list(default)
+            if self.type == 'Rancher':
+                info.append('(Notice: Get a Farmer\'s Guild to benefit from this)')
+            elif self.type == 'Ranch':
+                info[1] += ' (Notice: Get a Farmer\'s Guild to benefit from this)'
+            return tuple(info)
+        else:
+            return default
     def determine_farm(self):
+        if self.character.farm: return self.character.farm
         for building in self.channel.get_buildings():
             if building.type == 'Farmer\'s Guild':
-                self.farm = building.farmer.yard
-                break
+                self.character.farm = building.farmer.yard
+                return self.character.farm
     def options(self, character):
         return [{'name': '+10 to Food Production Rate',
                     'food-cost': 4,
-                    'action': self.rate1},
+                    'action': self.rate1,
+                    'condition': 'self.determine_farm() and self.character.farm.production > 250'},
                 {'name': '+250 to Food Production Rate',
                     'food-cost': 60,
-                    'action': self.rate2}]
-    def condition(self, character, action, **kwargs):
-        self.determine_farm()
-        if_is = self.if_is(action)
-        if (if_is('rate1') or if_is('rate2')) and (self.farm is None or self.farm.production == 250):
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.rate2,
+                    'condition': 'self.determine_farm() and self.character.farm.production > 250'}]
     def get_4th_info(self, channel):
-        return 'Food Production Rate', (str(1250 - self.farm.production) if self.farm else 'unknown')
+        self.determine_farm()
+        return 'Food Production Rate', (str(1250 - self.character.farm.production) if self.character.farm else 'unknown')
     def rate1(self, character):
         character.channel.add_message('You have increased your Food Production Rate by 10 for 10 food.')
-        self.farm.production = max(250, self.farm.production - 10)
+        self.character.farm.production = max(250, self.character.farm.production - 10)
     def rate2(self, character):
         character.channel.add_message('You have increased your Food Production Rate by 250 for 60 food.')
-        self.farm.production = max(250, self.farm.production - 250)
+        self.character.farm.production = max(250, self.character.farm.production - 250)
+    building_methods = {'determine_farm': determine_farm}
 
 class Mayor(InnPC):
     type = 'Mayor'
@@ -295,12 +312,8 @@ class Repairer(InnPC):
     def options(self, character):
         return [{'name': 'Repair Village',
                     'gold-cost': 50,
-                    'action': self.repair}]
-    def condition(self, character, action, **kwargs):
-        if_is = self.if_is(action)
-        if if_is('repair') and len([b for b in self.channel.get_buildings() if b.health < b.max_health]) == 0:
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.repair,
+                    'condition': 'len([b for b in self.channel.get_buildings() if b.health < b.max_health]) > 0'}]
     def get_4th_info(self, channel):
         return ('Buildings needing repair', str(len([b for b in self.channel.get_buildings() if b.health < b.max_health])))
     def repair(self, character):
@@ -322,12 +335,8 @@ class Builder(InnPC):
     def options(self, character):
         return [{'name': '+1 minute till the Walls fall',
                     'food-cost': 100,
-                    'action': self.add_minute}]
-    def condition(self, character, action, **kwargs):
-        if_is = self.if_is(action)
-        if if_is('add_minute') and self.server.fallen:
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.add_minute,
+                    'condition': 'not self.server.fallen'}]
     def get_4th_info(self, channel):
         if self.server.fallen: return 'Walls fallen', 'Yes'
         return 'Time till the Walls fall', toolbox.getTime(self.server)
@@ -348,12 +357,8 @@ class AdvancedBalloonist(InnPC):
     def options(self, character):
         return [{'name': '+ Shot Speed',
                     'gold-cost': 280,
-                    'action': self.increase_shot_speed}]
-    def condition(self, character, action, **kwargs):
-        if_is = self.if_is(action)
-        if if_is('increase_shot_speed') and character.shot_speed == 1:
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.increase_shot_speed,
+                    'condition': 'character.shot_speed > 1'}]
     def get_4th_info(self, channel):
         return 'Shot Speed', str(16-channel.character.shot_speed)  # Reversed
     def increase_shot_speed(self, character):
@@ -374,17 +379,12 @@ class RetiredBarbarian(InnPC):
     def options(self, character):
         return [{'name': 'Buy a Barbarian Shield',
                     'food-cost': 160,
-                    'action': self.buy_shield},
+                    'action': self.buy_shield,
+                    'condition': 'not character.has_shield'},
                 {'name': 'Buy a Barbarian Crossbow',
                     'food-cost': 100,
-                    'action': self.buy_crossbow}]
-    def condition(self, character, action, **kwargs):
-        if_is = self.if_is(action)
-        if if_is('buy_shield') and character.has_shield:
-            return False
-        if if_is('buy_crossbow') and character.barbshoot_cooldown >= 0:
-            return False
-        return super().condition(character, action, **kwargs)
+                    'action': self.buy_crossbow,
+                    'condition': 'character.barbshoot_cooldown == 0'}]
     def get_4th_info(self, channel):
         return 'Need Shield', str(not channel.character.has_shield)
     def buy_shield(self, character):
@@ -404,23 +404,18 @@ class Adventurer(InnPC):
     building_max_health = 300
     def options(self, character):
         return [{'name': 'End Current Event (Free)',
-                    'action': self.end_current_event},
+                    'action': self.end_current_event,
+                    'condition': 'len(self.server.events) > 0'},
                 {'name': 'Trigger a Barbarian Raid',
                     'gold-cost': 45,
                     'action': self.trigger_barbarian_raid,
+                    'condition': 'len(self.server.events) == 0',
                     'no': 'trigger a Barbarian Raid!'},
                 {'name': 'Trigger a huge Barbarian Raid!',
                     'gold-cost': 100,
                     'action': self.trigger_huge_barbarian_raid,
+                    'condition': 'len(self.server.events) == 0',
                     'no': 'Trigger a huge Barbarian Raid!'}]
-    def condition(self, character, action, **kwargs):
-        if_is = self.if_is(action)
-        if len(self.server.events):
-            if if_is('trigger_barbarian_raid') or if_is('trigger_huge_barbarian_raid'):
-                return False
-        elif if_is('end_current_event'):
-                return False
-        return super().condition(character, action, **kwargs)
     def get_4th_info(self, channel):
         return 'Current Event', ', '.join([event.type for event in self.server.events])
     def trigger_barbarian_raid(self, character):

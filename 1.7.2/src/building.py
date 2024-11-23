@@ -63,6 +63,7 @@ class CentralBuilding(Building):
                 {'name': 'Inn',
                     'food-cost': 100,
                     'action': self.buy_inn,
+                    'condition': 'not [building for building in channel.get_buildings() if building.type == "Inn"]',
                     'no': BTB}]
 
     def get_4th_info(self, channel):
@@ -115,8 +116,8 @@ class RunningTrack(Building):
     upgrade_cost = [0, 90]
     def init(self):
         self.character.speed += 3
-    def options(self, character):  # Building.condition() removes unavailable options automatically
-        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def options(self, character):
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'condition': 'self.level < 3', 'no': UPG}]
     def get_4th_info(self, channel):
         return 'Speed', str(channel.character.speed)
     def level_up(self, character):
@@ -134,8 +135,8 @@ class Gym(Building):
     upgrade_cost = [0, 90]
     def init(self):
         self.character.resistance += 2
-    def options(self, character):  # Building.condition() removes unavailable options automatically
-        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def options(self, character):
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'condition': 'self.level < 3', 'no': UPG}]
     def get_4th_info(self, channel):
         return 'Resistance', str(channel.character.resistance)
     def level_up(self, character):
@@ -154,8 +155,8 @@ class HealthCenter(Building):
     def init(self):
         self.character.max_health += 30
         self.character.health += 30
-    def options(self, character):  # Building.condition() removes unavailable options automatically
-        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'no': UPG}]
+    def options(self, character):
+        return [{'name': 'Upgrade', 'food-cost': self.upgrade_cost[1], 'action': self.upgrade, 'condition': 'self.level < 3', 'no': UPG}]
     def get_4th_info(self, channel):
         return 'character health', ('%s/%s' % (channel.character.health, channel.character.max_health))
     def level_up(self, character):
@@ -176,14 +177,17 @@ class FitnessCenter(Building):
         return [{'name': 'Running Track',
                     'food-cost': 75,
                     'action': self.buy_running_track,
+                    'condition': 'not [building for building in channel.get_buildings() if building.type == "Running Track"]',
                     'no': BTB},
                 {'name': 'Gym',
                     'food-cost': 75,
                     'action': self.buy_gym,
+                    'condition': 'not [building for building in channel.get_buildings() if building.type == "Gym"]',
                     'no': BTB},
                 {'name': 'Health Center',
                     'food-cost': 75,
                     'action': self.buy_health_center,
+                    'condition': 'not [building for building in channel.get_buildings() if building.type == "Health Center"]',
                     'no': BTB}]
     def get_4th_info(self, channel):
         return 'Number of fitness buildings', ('%s/3' % len([b for b in channel.get_buildings() if b.type in ('Health Center', 'Gym', 'Running Track')]))
@@ -257,13 +261,13 @@ class ConstructionSite(Building):
     dimensions = (560, 560)
     max_health = 160
     def options(self, character):  # Building.condition() removes unavailable options automatically
-        return [{'name': 'Upgrade', 'gold-cost': 30, 'action': self.upgrade, 'no': UPG},
+        return [{'name': 'Upgrade', 'gold-cost': 30, 'action': self.upgrade, 'condition': 'self.level == 1', 'no': UPG},
                 {'name': 'Crate', 'food-cost': 2, 'action': self.buy_crate, 'no': 'buy a crate!'},
                 {'name': 'Gate', 'gold-cost': 40, 'action': self.buy_gate, 'no': 'buy a gate!'},
                 {'name': 'TNT', 'gold-cost': 100, 'food-cost': 100, 'action': self.buy_tnt, 'no': 'buy TNT!'},
-                {'name': 'Archery Tower', 'gold-cost': 110, 'food-cost': 20, 'action': self.buy_archery_tower, 'no': 'buy an Archery Tower!'},
-                {'name': 'Robot Factory', 'gold-cost': 115, 'food-cost': 5, 'action': self.buy_robot_factory, 'no': BTB},
-                {'name': 'Barrel Maker', 'gold-cost': 50, 'food-cost': 65, 'action': self.buy_barrel_maker, 'no': BTB}]
+                {'name': 'Archery Tower', 'gold-cost': 110, 'food-cost': 20, 'action': self.buy_archery_tower, 'condition': 'self.level == 2', 'no': 'buy an Archery Tower!'},
+                {'name': 'Robot Factory', 'gold-cost': 115, 'food-cost': 5, 'action': self.buy_robot_factory, 'condition': 'self.level == 2', 'no': BTB},
+                {'name': 'Barrel Maker', 'gold-cost': 50, 'food-cost': 65, 'action': self.buy_barrel_maker, 'condition': 'self.level == 2', 'no': BTB}]
         return options
     def get_4th_info(self, channel):
         return 'Upgraded', str(self.level == 2)
@@ -298,6 +302,7 @@ class Restaurant(Building):
         return [{'name': 'Takeout',
                     'action': self.buy_takeout,
                     'food-cost': 12,
+                    'condition': 'not character.meal',
                     'no': 'buy takeout!'},
                 {'name': 'Order Meal',
                     'action': self.order_meal,
@@ -346,14 +351,17 @@ class Inn(Building):
     def options(self, character):
         options = [{'name': 'Upgrade',
                     'action': self.upgrade,
+                    'condition': 'self.level == 1',
                     'food-cost': self.upgrade_cost[1]}]
         if self.NPC:
             options.extend([{'name': 'Kick ' + self.NPC.type,
-                                'action': self.kick_npc},
+                                'action': self.kick_npc,
+                                'condition': 'character.channel == self.channel'},
                             {'name': 'Build the %s a house' % self.NPC.type,
                                 'action': self.build_house,
                                 'gold-cost': self.NPC.building_cost[0],
-                                'food-cost': self.NPC.building_cost[1]}])
+                                'food-cost': self.NPC.building_cost[1],
+                                'condition': 'character.channel == self.channel'}])
         return options
     def get_4th_info(self, channel):
         return 'Hosting', (self.NPC.type if self.NPC else 'Nobody')
@@ -391,10 +399,12 @@ class BarrelMaker(Building):
                 {'name': 'Barrel',
                     'action': self.buy_barrel,
                     'food-cost': 17,
+                    'condition': 'character.barrel_health <= 0',
                     'no': BUY},
                 {'name': 'Explosive Barrel',
                     'action': self.buy_explosive_barrel,
                     'gold-cost': 150,
+                    'condition': 'character.barrel_health <= 0',
                     'no': 'buy this quality barrel!'}]
     def get_4th_info(self, channel):
         return 'Barrel Health', str(channel.character.barrel_health)
@@ -419,7 +429,7 @@ def test_build(character):  # Returns a building's rect if the building fits
         if character.has_builder: width *= 0.8; height *= 0.8
         y_distance = 240
     else:
-        y_distance = 390
+        y_distance = 420
     rect = pygame.Rect(0, 0, width, height)
     rect.midtop = (character.x, character.y - y_distance)
     map_rect = pygame.Rect(0, 0, 6000, 3500)

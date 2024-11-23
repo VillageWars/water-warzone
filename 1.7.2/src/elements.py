@@ -56,6 +56,7 @@ class Balloon(Sprite):
             self.image_id = (0 if self.damage < 20 else 1)
             if self.shooter.shot_speed < 8:
                 self.image_id = (2 if self.damage < 20 else 3)
+        self.ignore_friend = (['Gate', 'Crate', 'Character'] if self.shooter.type == 'Archery Tower' else ['Gate', 'Character'])
     @property
     def channel(self):
         return getattr(self.shooter, 'channel', None)
@@ -86,9 +87,8 @@ class Balloon(Sprite):
         self.y += y
         self.test_collide()
     def test_collide(self):
-        obstacle = self.server.obstacles.collide(self.shooter, self.rect, ignore_friend=['Gate'])
-        enemy = self.server.dynamics.collide(self.shooter, self.rect, ignore_friend=['Character'])
-
+        obstacle = self.server.obstacles.collide(self.shooter, self.rect, ignore_friend=self.ignore_friend)
+        enemy = self.server.dynamics.collide(self.shooter, self.rect, ignore_friend=self.ignore_friend)
         if obstacle:
             obstacle.getHurt(self.damage, angle=self.angle, knockback=self.knockback, name=self.shooter_name, attacker=self.shooter, msg=self.kill_msg)
             self.pop()
@@ -177,6 +177,7 @@ class Building(Sprite):
         self.zone_rect = pygame.Rect(0, 0, *self.dimensions)
         self.zone_rect.midtop = (self.x, self.y - 100)  # 100 = half of building image height
         self.init()
+
     @property
     def channel(self):
         return self.character.channel
@@ -216,7 +217,7 @@ class Building(Sprite):
                                       'no': 'heal this building!'})
             if hasattr(self, 'options'):
                 for option in self.options(channel.character):
-                    if self.condition(channel.character, option['action']):
+                    if self.condition(channel.character, option['action'], condition=option.get('condition', 'True')):
                         option_complete(options, option)
         else:
             option_complete(options, {'name': 'Clear',
@@ -228,11 +229,15 @@ class Building(Sprite):
 
     def get_4th_info(self, channel):
         return 'Extra', 'Undefined'
+
     def init(self):
         pass
 
+    def get_info(self):
+        return self.info
+
     def gen_window(self, channel):
-        window = {'text': self.info,
+        window = {'text': self.get_info(),
                   '4th_info': self.get_4th_info(channel),
                   'health': (self.health, self.max_health),
                   'object': self,
@@ -279,6 +284,7 @@ class Building(Sprite):
                     if screen.colliderect(self.obstacle_rect):
                         character.channel.to_send.append({'action':'sound', 'sound':'building'})
                 self.die()
+
     def die(self):
         pass
 
@@ -291,43 +297,17 @@ class Building(Sprite):
         def if_is(a):  # Bound methods are not equal to functions, even if it's the same method
             return action.__name__ == a
         return if_is
-    def condition(self, player, action, **kwargs):
-        if_is = self.if_is(action)
-        if if_is('heal') and (self.health >= self.max_health or player != self.character):
-            return False
-        if if_is('buy_inn'):
-            for b in player.channel.get_buildings():
-                if b.type == 'Inn':
-                    return False
-        if if_is('buy_running_track'):
-            for b in player.channel.get_buildings():
-                if b.type == 'Running Track':
-                    return False
-        if if_is('buy_gym'):
-            for b in player.channel.get_buildings():
-                if b.type == 'Gym':
-                    return False
-        if if_is('buy_health_center'):
-            for b in player.channel.get_buildings():
-                if b.type == 'Health Center':
-                    return False
-        if if_is('buy_takeout') and player.meal:
-            return False
-        if (if_is('kick_npc') or if_is('build_house')) and player.channel != self.channel:
-            return False
-        if (if_is('buy_barrel') or if_is('buy_explosive_barrel')) and player.barrel_health > 0:
-            return False
-        if if_is('upgrade'):
-            if self.type in ('Construction Site', 'Inn') and self.level >= 2:
-                return False
-            if self.type in ('Running Track', 'Gym', 'Health Center') and self.level >= 3:
-                return False
-        if self.level == 1 and (if_is('buy_archery_tower') or if_is('buy_robot_factory') or if_is('buy_barrel_maker')):
-            return False
-        return True
 
-    def do_action(self, character, action, gold_cost=0, food_cost=0, no='do this!'):
-        if not self.condition(character, action, pre_action=False):
+    def condition(self, character, action, condition='True'):
+        channel = character.channel
+        try:
+            return eval(condition)
+        except Exception as e:
+            logging.error(f'Error evaluation condition "{condition}": {e}')
+            return False
+
+    def do_action(self, character, action, gold_cost=0, food_cost=0, condition='True', no='do this!'):
+        if not self.condition(character, action):
             character.channel.add_message('It is no longer available to ' + no, color=(0,0,255))
             return self.Out(character)
         if character.food >= food_cost:

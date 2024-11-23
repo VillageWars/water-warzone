@@ -9,6 +9,7 @@ import pymsgbox
 import re
 import requests
 import toolbox
+import shutil
 
 SKIP = []
 
@@ -76,4 +77,29 @@ if a == 'n':
     input('Press enter to exit')
     sys.exit()
 assert a == 'y'
-compress_version(skip=SKIP)
+
+#compress_version(skip=SKIP)
+
+input('Press enter to continue to prepare WaterWarzone')
+
+with open('../../WaterWarzone/app.py', 'w') as fo:
+    fo.write(f"import os\nos.chdir('{__version__}')\nresult = os.system('python -m app')")
+
+discontinued_version = input('Enter the name of the discontinued version: ')
+while not os.path.exists(f'../../WaterWarzone/{discontinued_version}'):
+    discontinued_version = input('That directory does not exist.\nEnter the name of the discontinued version: ')
+shutil.rmtree(f'../../WaterWarzone/{discontinued_version}')
+log.info(f'Unlinked version {discontinued_version} from WaterWarzone directory')
+
+
+shutil.copytree('../', f'../../WaterWarzone/{__version__}', ignore=lambda src, names: [name for name in names if name.endswith('.zip') or name in ['screenshots', '__pycache__']])
+log.info(f'Successfully copied version {__version__} to WaterWarzone directory')
+
+input('Press enter to start heroku upload')
+
+os.chdir('../../WaterWarzone')
+os.system('git add .')
+os.system('git commit -m "%s"' % input('Commit name: '))
+os.system('git push -u origin master')
+os.system('git push heroku')
+os.system('heroku logs --tail --app water-warzone')
